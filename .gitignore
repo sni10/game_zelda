@@ -1,0 +1,13 @@
+/.venv/
+.idea
+.pytest_cache
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/

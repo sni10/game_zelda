@@ -2,7 +2,7 @@ name: Auto Sync Branches
 
 on:
   push:
-    branches: [dev, stage]
+    branches: [main]
 
 jobs:
   sync-branches:
@@ -23,82 +23,60 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Setup local tracking branches
+      - name: Create sync PR for stage
         run: |
-          # Create local tracking branches for dev and stage if they don't exist
-          if ! git show-ref --verify --quiet refs/heads/dev; then
-            if git show-ref --verify --quiet refs/remotes/origin/dev; then
-              git checkout -b dev origin/dev
-            else
-              echo "Warning: origin/dev branch does not exist"
-            fi
-          fi
-          
-          if ! git show-ref --verify --quiet refs/heads/stage; then
-            if git show-ref --verify --quiet refs/remotes/origin/stage; then
-              git checkout -b stage origin/stage
-            else
-              echo "Warning: origin/stage branch does not exist"
-            fi
-          fi
-          
-          # Return to main branch
-          git checkout main
-
-      - name: Create sync PR from dev to stage
-        if: github.ref_name == 'dev'
-        run: |
-          # Check if stage needs sync from dev
-          COMMITS_BEHIND=$(git rev-list --count stage..dev)
+          # Check if stage needs sync
+          COMMITS_BEHIND=$(git rev-list --count stage..main)
           
           if [ "$COMMITS_BEHIND" -gt 0 ]; then
             # Create branch for PR
-            BRANCH_NAME="auto-sync/dev-to-stage-$(date +%Y%m%d-%H%M%S)"
-            git checkout -b $BRANCH_NAME dev
+            BRANCH_NAME="auto-sync/main-to-stage-$(date +%Y%m%d-%H%M%S)"
+            git checkout -b $BRANCH_NAME main
             git push origin $BRANCH_NAME
             
             # Create PR
             gh pr create \
-              --title "🔄 Auto-sync dev → stage" \
-              --body "Automatically syncing changes from dev to stage branch.
+              --title "🔄 Auto-sync main → stage" \
+              --body "Automatically syncing changes from maтоеin to stage branch.
 
             **Changes included:**
-            $(git log stage..dev --oneline --max-count=10)
+            $(git log stage..main --oneline --max-count=10)
 
-            This PR was created automatically after changes were merged to dev." \
+            This PR was created automatically after changes were merged to main." \
               --base stage \
-              --head $BRANCH_NAME
+              --head $BRANCH_NAME \
+              --label "auto-sync"
           else
-            echo "Stage is up to date with dev"
+            echo "Stage is up to date with main"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create sync PR from stage to main
-        if: github.ref_name == 'stage'
+      - name: Create sync PR for dev
         run: |
-          # Check if main needs sync from stage
-          COMMITS_BEHIND=$(git rev-list --count main..stage)
+          # Check if dev needs sync
+          COMMITS_BEHIND=$(git rev-list --count dev..stage 2>/dev/null || echo "0")
           
           if [ "$COMMITS_BEHIND" -gt 0 ]; then
             # Create branch for PR
-            BRANCH_NAME="auto-sync/stage-to-main-$(date +%Y%m%d-%H%M%S)"
+            BRANCH_NAME="auto-sync/stage-to-dev-$(date +%Y%m%d-%H%M%S)"
             git checkout -b $BRANCH_NAME stage
             git push origin $BRANCH_NAME
             
             # Create PR
             gh pr create \
-              --title "🔄 Auto-sync stage → main" \
-              --body "Automatically syncing changes from stage to main branch.
+              --title "🔄 Auto-sync stage → dev" \
+              --body "Automatically syncing changes from stage to dev branch.
 
             **Changes included:**
-            $(git log main..stage --oneline --max-count=10)
+            $(git log dev..stage --oneline --max-count=10 2>/dev/null || echo 'No commits to sync')
 
-            This PR was created automatically after changes were merged to stage." \
-              --base main \
-              --head $BRANCH_NAME
+            This PR was created automatically after stage was updated." \
+              --base dev \
+              --head $BRANCH_NAME \
+              --label "auto-sync"
           else
-            echo "Main is up to date with stage"
+            echo "Dev is up to date with stage"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
