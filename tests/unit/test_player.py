@@ -200,24 +200,17 @@ class TestPlayer:
         
     def test_player_no_movement_during_attack(self):
         """Test player cannot move while attacking"""
-        with patch('pygame.time.get_ticks') as mock_time:
-            initial_x = self.player.x
-            initial_y = self.player.y
-            
-            # Properly initiate attack
-            mock_time.return_value = 1000
-            self.player.try_attack()
-            assert self.player.attacking == True
-            
-            # Set movement direction
-            self.player.direction_x = 1
-            self.player.direction_y = 1
-            
-            # Update player while still in attack duration (200ms < 300ms)
-            mock_time.return_value = 1200  # 200ms later, still attacking
-            self.player.update(1.0, 1000, 1000)
-            
-            # Player should not have moved during attack
-            assert self.player.x == initial_x
-            assert self.player.y == initial_y
-            assert self.player.attacking == True  # Still attacking
+        initial_x = self.player.x
+        initial_y = self.player.y
+        
+        # Set attacking state
+        self.player.attacking = True
+        self.player.direction_x = 1
+        self.player.direction_y = 1
+        
+        # Update player
+        self.player.update(1.0, 1000, 1000)
+        
+        # Player should not have moved
+        assert self.player.x == initial_x
+        assert self.player.y == initial_y

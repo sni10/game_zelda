@@ -131,6 +131,12 @@ python main.py
 pip install pygame
 ```
 
+## 📚 Документация
+
+### 📋 Release Notes
+Все заметки о релизах доступны в папке документации:
+- [Release Notes v0.0.1](docs/release-notes/release_notes_v0.0.1.md) - Первый релиз игры
+- [Release Notes v0.1.1](docs/release-notes/release_notes_v0.1.1.md) - Исправления тестов и CI/CD
 
 ---
 
