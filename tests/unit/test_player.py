@@ -203,14 +203,17 @@ class TestPlayer:
         initial_x = self.player.x
         initial_y = self.player.y
         
-        # Set attacking state
-        self.player.attacking = True
-        self.player.direction_x = 1
-        self.player.direction_y = 1
-        
-        # Update player
-        self.player.update(1.0, 1000, 1000)
-        
-        # Player should not have moved
-        assert self.player.x == initial_x
-        assert self.player.y == initial_y
+        with patch('pygame.time.get_ticks') as mock_time:
+            # Set up attack timing - attack should still be active
+            mock_time.return_value = 1000
+            self.player.attacking = True
+            self.player.attack_timer = 800  # Attack started 200ms ago, still within 300ms duration
+            self.player.direction_x = 1
+            self.player.direction_y = 1
+            
+            # Update player
+            self.player.update(1.0, 1000, 1000)
+            
+            # Player should not have moved
+            assert self.player.x == initial_x
+            assert self.player.y == initial_y
