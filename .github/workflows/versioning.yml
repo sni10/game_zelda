@@ -2,7 +2,7 @@ name: Auto Versioning
 
 on:
   push:
-    branches: [main]
+    branches: [stage]
   workflow_dispatch:
     inputs:
       increment_type:
