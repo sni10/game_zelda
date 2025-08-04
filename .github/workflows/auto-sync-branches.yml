@@ -23,10 +23,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-      - name: Fetch all branches
+      - name: Fetch all branches and create local tracking branches
         run: |
           git fetch origin
           git branch -r
+          
+          # Create local tracking branches for all remote branches
+          for branch in $(git branch -r | grep -v HEAD | sed 's/origin\///'); do
+            if ! git show-ref --verify --quiet refs/heads/$branch; then
+              echo "Creating local tracking branch: $branch"
+              git branch $branch origin/$branch
+            fi
+          done
+          
+          # Show all branches for debugging
+          echo "Local branches:"
+          git branch -a
 
       - name: Create sync PR from dev to stage
         if: github.ref == 'refs/heads/dev'
