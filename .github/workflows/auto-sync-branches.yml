@@ -67,8 +67,7 @@ jobs:
 
             This PR was created automatically after changes were merged to dev." \
               --base stage \
-              --head $BRANCH_NAME \
-              --label "auto-sync"
+              --head $BRANCH_NAME
           else
             echo "Stage is up to date with dev"
           fi
@@ -97,8 +96,7 @@ jobs:
 
             This PR was created automatically after changes were merged to stage." \
               --base main \
-              --head $BRANCH_NAME \
-              --label "auto-sync"
+              --head $BRANCH_NAME
           else
             echo "Main is up to date with stage"
           fi
