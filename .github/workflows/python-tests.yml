@@ -1,15 +1,14 @@
-name: 🎮 Zelda Game Tests
+name: 🧪 Python Tests with PostgreSQL
 
 on:
   pull_request:
-    branches: [ "dev", "stage", "main" ]
+    branches: [ "dev", "stage", "release/*", "main" ]
   push:
-    branches: [ "dev", "stage", "main" ]
-  workflow_dispatch:
+    branches: [ "dev", "stage", "release/*", "main" ]
 
 jobs:
   test:
-    name: 🧪 Run Game Tests
+    name: 🔍 Run Pytest with PostgreSQL Database
     runs-on: ubuntu-latest
 
     steps:
@@ -19,78 +18,55 @@ jobs:
       - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🎮 Build game container
+      - name: 🧪 Run tests with PostgreSQL using docker-compose
         run: |
-          echo "🔨 Building Zelda game container..."
-          docker build -t zelda-game .
+          echo "🚀 Starting PostgreSQL and running tests..."
+          docker-compose -f docker/test/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test-runner
 
-      - name: 🧪 Run game tests in headless mode
-        run: |
-          echo "🚀 Running Zelda game tests..."
-          docker run --rm \
-            -e PYTHONPATH=/app/src \
-            -e SDL_VIDEODRIVER=dummy \
-            -e DISPLAY=:99 \
-            -v ${{ github.workspace }}:/app \
-            --workdir /app \
-            zelda-game sh -c "
-              echo '🎮 Starting virtual display for headless testing...'
-              Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-              sleep 2
-              echo '🧪 Running all game tests with coverage...'
-              pytest tests/ -v --tb=short --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing
-            "
-
-      - name: 🧪 Alternative - Run tests with docker-compose
+      - name: 📋 Show test logs (if failed)
         if: failure()
         run: |
-          echo "🔄 Trying alternative test method with docker-compose..."
-          docker-compose --profile testing up game-tests --abort-on-container-exit
+          echo "📋 PostgreSQL logs:"
+          docker-compose -f docker/test/docker-compose.test.yml logs postgres-test
+          echo "📋 Test runner logs:"
+          docker-compose -f docker/test/docker-compose.test.yml logs test-runner
 
-      - name: 📋 Show container logs (if failed)
-        if: failure()
-        run: |
-          echo "📋 Docker container logs:"
-          docker logs $(docker ps -aq --filter ancestor=zelda-game) 2>/dev/null || echo "No container logs available"
-
-      - name: 📦 Extract test results from container
+      - name: 🧹 Clean up containers
         if: always()
         run: |
-          echo "📦 Extracting test artifacts..."
+          docker-compose -f docker/test/docker-compose.test.yml down -v
+          docker system prune -f
+
+      - name: 📦 Archive test results
+        if: always()
+        run: |
+          # Create artifacts directory
           mkdir -p artifacts
           
-          # Try to extract coverage and test results
-          CONTAINER_ID=$(docker create zelda-game)
-          docker cp $CONTAINER_ID:/app/htmlcov artifacts/ 2>/dev/null || echo "No HTML coverage report found"
-          docker cp $CONTAINER_ID:/app/coverage.xml artifacts/ 2>/dev/null || echo "No XML coverage report found"
-          docker cp $CONTAINER_ID:/app/.pytest_cache artifacts/ 2>/dev/null || echo "No pytest cache found"
-          docker rm $CONTAINER_ID 2>/dev/null || true
+          # Try to copy test results from container (if it exists)
+          CONTAINER_ID=$(docker-compose -f docker/test/docker-compose.test.yml ps -q test-runner 2>/dev/null || echo "")
+          if [ ! -z "$CONTAINER_ID" ]; then
+            docker cp $CONTAINER_ID:/app/.pytest_cache artifacts/ 2>/dev/null || true
+            docker cp $CONTAINER_ID:/app/htmlcov artifacts/ 2>/dev/null || true
+          fi
           
-          # Copy any local artifacts
-          cp -r htmlcov artifacts/ 2>/dev/null || true
-          cp coverage.xml artifacts/ 2>/dev/null || true
+          # Copy any local test artifacts
           cp -r .pytest_cache artifacts/ 2>/dev/null || true
+          cp -r htmlcov artifacts/ 2>/dev/null || true
+          cp -r tests/__pycache__ artifacts/ 2>/dev/null || true
 
       - name: 📤 Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: game-test-artifacts-${{ github.run_number }}
+          name: pytest-artifacts-${{ github.run_number }}
           path: artifacts
           retention-days: 7
 
-      - name: 📊 Upload coverage reports
+      - name: 📊 Upload coverage reports (if available)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ github.run_number }}
-          path: |
-            htmlcov
-            coverage.xml
+          path: htmlcov
           retention-days: 7
-
-      - name: 🧹 Clean up
-        if: always()
-        run: |
-          docker-compose down -v 2>/dev/null || true
-          docker system prune -f
