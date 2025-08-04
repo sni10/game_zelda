@@ -40,4 +40,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "from src.core.config_loader import load_config; load_config(); print('OK')" || exit 1
 
 # 🎯 Default command to run the game
-CMD ["python", "main.py"]
+CMD [ "pytest", "-q", "tests/" ]
