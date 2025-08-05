@@ -21,9 +21,8 @@ class Game:
         # Создание игрового мира
         self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
         
-        # Создание игрока в центре мира
-        player_start_x = self.world.width // 2
-        player_start_y = self.world.height // 2
+        # Создание игрока в стартовой позиции из карты
+        player_start_x, player_start_y = self.world.get_player_start_position()
         self.player = Player(player_start_x, player_start_y)
         
         # Переменные для отслеживания времени
@@ -51,20 +50,8 @@ class Game:
         # Обработка ввода игрока
         self.player.handle_input(keys)
         
-        # Сохранение старой позиции для проверки коллизий
-        old_x = self.player.x
-        old_y = self.player.y
-        
-        # Обновление игрока
-        self.player.update(dt, self.world.width, self.world.height)
-        
-        # Проверка коллизий с препятствиями
-        if self.world.check_collision(self.player.rect):
-            # Возврат к старой позиции при коллизии
-            self.player.x = old_x
-            self.player.y = old_y
-            self.player.rect.x = int(old_x)
-            self.player.rect.y = int(old_y)
+        # Обновление игрока (коллизии теперь проверяются внутри player.update)
+        self.player.update(dt, self.world)
         
         # Обновление камеры
         self.world.update_camera(
@@ -83,6 +70,9 @@ class Game:
         
         # Отрисовка игрока
         self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
+        
+        # Отрисовка UI (полоска здоровья)
+        self.draw_health_bar()
         
         # Отладочная информация
         if self.show_debug:
@@ -105,6 +95,42 @@ class Game:
         
         # Обновление дисплея
         pygame.display.flip()
+
+    def draw_health_bar(self):
+        """Отрисовка полоски здоровья игрока"""
+        # Параметры полоски здоровья
+        bar_width = 200
+        bar_height = 20
+        bar_x = 10
+        bar_y = 10
+        border_width = 2
+        
+        # Вычисляем процент здоровья
+        health_percentage = self.player.health / self.player.max_health
+        health_bar_width = int(bar_width * health_percentage)
+        
+        # Рисуем фон полоски (темно-серый)
+        pygame.draw.rect(self.screen, get_color('DARK_GRAY'), 
+                        (bar_x, bar_y, bar_width, bar_height))
+        
+        # Рисуем полоску здоровья (зеленый)
+        if health_bar_width > 0:
+            pygame.draw.rect(self.screen, get_color('GREEN'), 
+                            (bar_x, bar_y, health_bar_width, bar_height))
+        
+        # Рисуем тонкую рамочку
+        pygame.draw.rect(self.screen, get_color('WHITE'), 
+                        (bar_x - border_width, bar_y - border_width, 
+                         bar_width + border_width * 2, bar_height + border_width * 2), 
+                        border_width)
+        
+        # Добавляем текст с числовым значением здоровья
+        font = pygame.font.Font(None, 24)
+        health_text = f"{int(self.player.health)}/{int(self.player.max_health)}"
+        text_surface = font.render(health_text, True, get_color('WHITE'))
+        text_x = bar_x + bar_width + 10
+        text_y = bar_y + (bar_height - text_surface.get_height()) // 2
+        self.screen.blit(text_surface, (text_x, text_y))
 
     def run(self):
         """Основной игровой цикл"""
