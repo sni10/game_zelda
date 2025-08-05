@@ -59,6 +59,16 @@ class Game:
                     action = self.menu.handle_input(event)
                     if action == "new_game":
                         self.start_new_game()
+                    elif action == "continue_game":
+                        # TODO: Реализовать загрузку quicksave при реализации системы сохранений
+                        print("Продолжить игру - функция будет реализована в Issue #15")
+                        # Пока что запускаем новую игру
+                        self.start_new_game()
+                    elif action == "load_game":
+                        # TODO: Реализовать диалог выбора сохранений при реализации Issue #16
+                        print("Загрузить игру - функция будет реализована в Issue #16")
+                        # Пока что запускаем новую игру
+                        self.start_new_game()
                     elif action == "exit":
                         self.running = False
                 elif self.state == GameState.PLAYING:
