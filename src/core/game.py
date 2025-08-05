@@ -6,6 +6,7 @@ from src.ui.menu import MainMenu
 from src.utils.debug import debug
 from src.entities.player import Player
 from src.world.world import World
+from src.systems.save_system import SaveSystem
 
 
 class Game:
@@ -35,6 +36,9 @@ class Game:
         
         # Отладочная информация
         self.show_debug = False
+        
+        # Система сохранений
+        self.save_system = SaveSystem()
 
     def start_new_game(self):
         """Инициализация новой игры"""
@@ -60,10 +64,8 @@ class Game:
                     if action == "new_game":
                         self.start_new_game()
                     elif action == "continue_game":
-                        # TODO: Реализовать загрузку quicksave при реализации системы сохранений
-                        print("Продолжить игру - функция будет реализована в Issue #15")
-                        # Пока что запускаем новую игру
-                        self.start_new_game()
+                        # Загрузка quicksave
+                        self.quickload()
                     elif action == "load_game":
                         # TODO: Реализовать диалог выбора сохранений при реализации Issue #16
                         print("Загрузить игру - функция будет реализована в Issue #16")
@@ -75,6 +77,12 @@ class Game:
                     # Обработка событий в игре
                     if event.key == pygame.K_F1:
                         self.show_debug = not self.show_debug
+                    elif event.key == pygame.K_F5:
+                        # Быстрое сохранение
+                        self.quicksave()
+                    elif event.key == pygame.K_F9:
+                        # Быстрая загрузка
+                        self.quickload()
                     elif event.key == pygame.K_ESCAPE:
                         self.state = GameState.MENU
 
@@ -172,6 +180,42 @@ class Game:
         text_x = bar_x + bar_width + 10
         text_y = bar_y + (bar_height - text_surface.get_height()) // 2
         self.screen.blit(text_surface, (text_x, text_y))
+
+    def quicksave(self):
+        """Быстрое сохранение игры (F5)"""
+        if self.player and self.world:
+            success = self.save_system.save_game(self.player, self.world)
+            if success:
+                # Показываем уведомление об успешном сохранении
+                print("Игра сохранена! (F5)")
+            else:
+                print("Ошибка сохранения!")
+        else:
+            print("Нет активной игры для сохранения!")
+
+    def quickload(self):
+        """Быстрая загрузка игры (F9)"""
+        if not self.save_system.quicksave_exists():
+            print("Файл быстрого сохранения не найден!")
+            return
+        
+        save_data = self.save_system.load_game()
+        if save_data:
+            # Если игра не запущена, создаем новый мир и игрока
+            if not self.player or not self.world:
+                self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
+                # Создаем игрока с временными координатами
+                self.player = Player(0, 0)
+            
+            # Применяем загруженные данные
+            self.save_system.apply_save_data_to_player(self.player, save_data)
+            self.save_system.apply_save_data_to_world(self.world, save_data)
+            
+            # Переходим в игровое состояние
+            self.state = GameState.PLAYING
+            print("Игра загружена! (F9)")
+        else:
+            print("Ошибка загрузки!")
 
     def run(self):
         """Основной игровой цикл"""
