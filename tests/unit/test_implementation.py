@@ -120,12 +120,10 @@ def main():
         
     except Exception as e:
         print(f"❌ Test failed: {e}")
-        return False
+        assert False, f"Test failed: {e}"
     
     finally:
         pygame.quit()
-    
-    return True
 
 if __name__ == "__main__":
     success = main()
