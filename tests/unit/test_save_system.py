@@ -22,7 +22,8 @@ def test_save_system():
     """Test the save system functionality"""
     print("=== Testing Save System for Issue #15 ===")
     
-    # Initialize pygame (required for some components)
+    # Initialize pygame (required for some components) in headless mode
+    os.environ['SDL_VIDEODRIVER'] = 'dummy'
     pygame.init()
     
     # Load config
@@ -53,7 +54,7 @@ def test_save_system():
         print("   ✓ Save successful")
     else:
         print("   ✗ Save failed")
-        return False
+        assert False, "Save failed"
     
     # Check if quicksave file exists
     print("   Checking if quicksave file exists...")
@@ -61,7 +62,7 @@ def test_save_system():
         print("   ✓ Quicksave file exists")
     else:
         print("   ✗ Quicksave file not found")
-        return False
+        assert False, "Quicksave file not found"
     
     # Test load
     print("   Testing load...")
@@ -71,7 +72,7 @@ def test_save_system():
         print(f"   Loaded data keys: {list(save_data.keys())}")
     else:
         print("   ✗ Load failed")
-        return False
+        assert False, "Load failed"
     
     # Test applying save data
     print("3. Testing save data application...")
@@ -94,7 +95,7 @@ def test_save_system():
         print("   ✓ Save data applied correctly")
     else:
         print("   ✗ Save data not applied correctly")
-        return False
+        assert False, "Save data not applied correctly"
     
     # Test save file format
     print("4. Testing save file format...")
@@ -109,10 +110,10 @@ def test_save_system():
             print(f"   Save timestamp: {data['timestamp']}")
         else:
             print("   ✗ Save file missing required keys")
-            return False
+            assert False, "Save file missing required keys"
     else:
         print("   ✗ Quicksave file not found")
-        return False
+        assert False, "Quicksave file not found for format test"
     
     print("\n=== All tests passed! ===")
     print("Issue #15 requirements verified:")
@@ -125,7 +126,6 @@ def test_save_system():
     print("✓ JSON format with timestamp")
     
     pygame.quit()
-    return True
 
 if __name__ == "__main__":
     try:

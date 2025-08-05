@@ -29,7 +29,8 @@ class TestMainMenu(unittest.TestCase):
     
     def setUp(self):
         """Настройка перед каждым тестом"""
-        # Инициализация pygame для тестов
+        # Инициализация pygame для тестов в headless режиме
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
         pygame.init()
         pygame.display.set_mode((800, 600))
         
