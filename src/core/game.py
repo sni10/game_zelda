@@ -2,7 +2,9 @@ import pygame
 import sys
 from src.core.config_loader import load_config, get_config, get_color
 from src.core.game_states import GameState
+from src.core.game_stats import GameStats
 from src.ui.menu import MainMenu
+from src.ui.game_over import GameOverScreen
 from src.utils.debug import debug
 from src.entities.player import Player
 from src.world.world import World
@@ -30,6 +32,8 @@ class Game:
         # Игровые объекты (инициализируются при начале новой игры)
         self.world = None
         self.player = None
+        self.game_stats = None
+        self.game_over_screen = None
         
         # Переменные для отслеживания времени
         self.last_time = pygame.time.get_ticks()
@@ -48,6 +52,16 @@ class Game:
         # Создание игрока в стартовой позиции из карты
         player_start_x, player_start_y = self.world.get_player_start_position()
         self.player = Player(player_start_x, player_start_y)
+        
+        # Инициализация статистики игры
+        self.game_stats = GameStats()
+        
+        # Инициализация Game Over экрана
+        self.game_over_screen = GameOverScreen(
+            get_config('WIDTH'), 
+            get_config('HEIGHT'), 
+            self.game_stats
+        )
         
         # Переход в игровое состояние
         self.state = GameState.PLAYING
@@ -85,10 +99,24 @@ class Game:
                         self.quickload()
                     elif event.key == pygame.K_ESCAPE:
                         self.state = GameState.MENU
+                elif self.state == GameState.GAME_OVER:
+                    # Обработка событий на экране Game Over
+                    if self.game_over_screen:
+                        action = self.game_over_screen.handle_input(event)
+                        if action == "MENU":
+                            self.state = GameState.MENU
+                        elif action == "QUIT":
+                            self.running = False
 
     def update(self, dt):
         """Обновление игровой логики"""
         if self.state == GameState.PLAYING and self.player and self.world:
+            # Проверка смерти игрока
+            if self.player.is_dead():
+                self.game_stats.record_death()
+                self.state = GameState.GAME_OVER
+                return
+            
             # Получение состояния клавиш
             keys = pygame.key.get_pressed()
             
@@ -96,7 +124,11 @@ class Game:
             self.player.handle_input(keys)
             
             # Обновление игрока (коллизии теперь проверяются внутри player.update)
-            self.player.update(dt, self.world)
+            self.player.update(dt, self.world, self.game_stats)
+            
+            # Обновление статистики
+            if self.game_stats:
+                self.game_stats.update_position(self.player.x, self.player.y)
             
             # Обновление камеры
             self.world.update_camera(
@@ -141,6 +173,10 @@ class Game:
             else:
                 # Показываем базовые инструкции
                 debug("Press F1 for debug info, ESC for menu", y=get_config('HEIGHT') - 30)
+        elif self.state == GameState.GAME_OVER:
+            # Отрисовка экрана Game Over
+            if self.game_over_screen:
+                self.game_over_screen.draw(self.screen)
         
         # Обновление дисплея
         pygame.display.flip()
@@ -206,6 +242,18 @@ class Game:
                 self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
                 # Создаем игрока с временными координатами
                 self.player = Player(0, 0)
+            
+            # Инициализация статистики игры (если еще не создана)
+            if not self.game_stats:
+                self.game_stats = GameStats()
+            
+            # Инициализация Game Over экрана (если еще не создан)
+            if not self.game_over_screen:
+                self.game_over_screen = GameOverScreen(
+                    get_config('WIDTH'), 
+                    get_config('HEIGHT'), 
+                    self.game_stats
+                )
             
             # Применяем загруженные данные
             self.save_system.apply_save_data_to_player(self.player, save_data)

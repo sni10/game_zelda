@@ -400,3 +400,76 @@ class TestPlayer:
         
         assert abs(actual_distance_x - expected_distance) < 1
         assert abs(actual_distance_y - expected_distance) < 1
+
+    def test_player_is_dead_method(self):
+        """Test is_dead method"""
+        # Player should be alive initially
+        assert not self.player.is_dead()
+        
+        # Set health to 0 - player should be dead
+        self.player.health = 0
+        assert self.player.is_dead()
+        
+        # Set health below 0 - player should still be dead
+        self.player.health = -10
+        assert self.player.is_dead()
+        
+        # Restore health - player should be alive
+        self.player.health = 50
+        assert not self.player.is_dead()
+
+    def test_player_take_damage_method(self):
+        """Test take_damage method"""
+        initial_health = self.player.health
+        
+        # Take damage
+        damage = 20
+        self.player.take_damage(damage)
+        assert self.player.health == initial_health - damage
+        
+        # Take more damage
+        self.player.take_damage(30)
+        assert self.player.health == initial_health - damage - 30
+        
+        # Take massive damage - health should not go below 0
+        self.player.take_damage(1000)
+        assert self.player.health == 0
+        
+        # Dead player should not take more damage
+        self.player.take_damage(10)
+        assert self.player.health == 0
+
+    def test_player_heal_method(self):
+        """Test heal method"""
+        self.player.health = 50  # Reduce health
+        
+        # Heal player
+        heal_amount = 20
+        self.player.heal(heal_amount)
+        assert self.player.health == 70
+        
+        # Overheal should not exceed max_health
+        self.player.heal(50)
+        assert self.player.health == self.player.max_health
+        
+        # Dead player should not heal
+        self.player.health = 0
+        self.player.heal(50)
+        assert self.player.health == 0
+
+    def test_player_get_health_percentage(self):
+        """Test get_health_percentage method"""
+        # Full health should return 1.0
+        assert self.player.get_health_percentage() == 1.0
+        
+        # Half health should return 0.5
+        self.player.health = 50
+        assert self.player.get_health_percentage() == 0.5
+        
+        # Zero health should return 0.0
+        self.player.health = 0
+        assert self.player.get_health_percentage() == 0.0
+        
+        # Test edge case with zero max_health
+        self.player.max_health = 0
+        assert self.player.get_health_percentage() == 0.0

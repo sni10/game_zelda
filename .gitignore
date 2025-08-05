@@ -3473,3 +3473,4 @@ htmlcov/
 /venv/lib/python3.10/site-packages/pytest-cov.pth
 /venv/lib/python3.10/site-packages/typing_extensions.py
 /venv/pyvenv.cfg
+/.claude/
