@@ -17,7 +17,13 @@ class Player:
         # Направление движения
         self.direction_x = 0
         self.direction_y = 0
-        self.facing_direction = 'down'  # направление взгляда для атаки
+        self.facing_direction = 'down'  # направление взгляда для атаки (8 направлений)
+        
+        # Система здоровья
+        self.max_health = 100
+        self.health = self.max_health
+        self.last_damage_time = 0
+        self.damage_cooldown = 1000  # миллисекунды между уроном от окружения
         
         # Система атаки
         self.attacking = False
@@ -38,16 +44,31 @@ class Player:
         # Движение по 8 направлениям
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.direction_x = -1
-            self.facing_direction = 'left'
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.direction_x = 1
-            self.facing_direction = 'right'
         if keys[pygame.K_UP] or keys[pygame.K_w]:
             self.direction_y = -1
-            self.facing_direction = 'up'
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.direction_y = 1
-            self.facing_direction = 'down'
+            
+        # Определяем направление взгляда на основе движения (8 направлений)
+        if self.direction_x != 0 or self.direction_y != 0:
+            if self.direction_x == -1 and self.direction_y == -1:
+                self.facing_direction = 'up_left'
+            elif self.direction_x == 1 and self.direction_y == -1:
+                self.facing_direction = 'up_right'
+            elif self.direction_x == -1 and self.direction_y == 1:
+                self.facing_direction = 'down_left'
+            elif self.direction_x == 1 and self.direction_y == 1:
+                self.facing_direction = 'down_right'
+            elif self.direction_x == -1:
+                self.facing_direction = 'left'
+            elif self.direction_x == 1:
+                self.facing_direction = 'right'
+            elif self.direction_y == -1:
+                self.facing_direction = 'up'
+            elif self.direction_y == 1:
+                self.facing_direction = 'down'
             
         # Нормализация диагонального движения
         if self.direction_x != 0 and self.direction_y != 0:
@@ -67,7 +88,7 @@ class Player:
             self.attack_timer = current_time
             self.last_attack_time = current_time
     
-    def update(self, dt, world_width, world_height):
+    def update(self, dt, world):
         """Обновление состояния игрока"""
         # Обновление атаки
         if self.attacking:
@@ -77,19 +98,39 @@ class Player:
         
         # Движение
         if not self.attacking:  # Нельзя двигаться во время атаки
+            # Проверяем текущий ландшафт для модификации скорости
+            current_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
+            speed_modifier = current_tile.speed_modifier if current_tile else 1.0
+            effective_speed = self.speed * speed_modifier
+            
             # Вычисление новой позиции
-            new_x = self.x + self.direction_x * self.speed * dt
-            new_y = self.y + self.direction_y * self.speed * dt
+            new_x = self.x + self.direction_x * effective_speed * dt
+            new_y = self.y + self.direction_y * effective_speed * dt
             
             # Ограничение движения границами мира
-            new_x = max(0, min(new_x, world_width - self.width))
-            new_y = max(0, min(new_y, world_height - self.height))
+            new_x = max(0, min(new_x, world.width - self.width))
+            new_y = max(0, min(new_y, world.height - self.height))
             
-            # Обновление позиции
-            self.x = new_x
-            self.y = new_y
-            self.rect.x = int(self.x)
-            self.rect.y = int(self.y)
+            # Создаем временный rect для проверки коллизий
+            temp_rect = pygame.Rect(int(new_x), int(new_y), self.width, self.height)
+            
+            # Проверка коллизий с препятствиями
+            if not world.check_collision(temp_rect):
+                # Обновление позиции только если нет коллизий
+                self.x = new_x
+                self.y = new_y
+                self.rect.x = int(self.x)
+                self.rect.y = int(self.y)
+                
+                # Проверяем урон от ландшафта
+                new_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
+                if new_tile and new_tile.damages_player:
+                    current_time = pygame.time.get_ticks()
+                    if current_time - self.last_damage_time > self.damage_cooldown:
+                        self.health -= new_tile.damage_amount
+                        self.last_damage_time = current_time
+                        if self.health < 0:
+                            self.health = 0
     
     def get_attack_rect(self):
         """Получить прямоугольник атаки"""
@@ -115,6 +156,22 @@ class Player:
         elif self.facing_direction == 'right':
             return pygame.Rect(self.rect.right, 
                              self.rect.centery - attack_height//2, 
+                             attack_width, attack_height)
+        elif self.facing_direction == 'up_left':
+            return pygame.Rect(self.rect.left - attack_range//2, 
+                             self.rect.top - attack_range//2, 
+                             attack_width, attack_height)
+        elif self.facing_direction == 'up_right':
+            return pygame.Rect(self.rect.right - attack_width//2, 
+                             self.rect.top - attack_range//2, 
+                             attack_width, attack_height)
+        elif self.facing_direction == 'down_left':
+            return pygame.Rect(self.rect.left - attack_range//2, 
+                             self.rect.bottom - attack_height//2, 
+                             attack_width, attack_height)
+        elif self.facing_direction == 'down_right':
+            return pygame.Rect(self.rect.right - attack_width//2, 
+                             self.rect.bottom - attack_height//2, 
                              attack_width, attack_height)
         return None
     
@@ -142,6 +199,14 @@ class Player:
             pygame.draw.circle(screen, get_color('WHITE'), (screen_x + 5, center_y), 3)
         elif self.facing_direction == 'right':
             pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, center_y), 3)
+        elif self.facing_direction == 'up_left':
+            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + 5, screen_y + 5), 3)
+        elif self.facing_direction == 'up_right':
+            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, screen_y + 5), 3)
+        elif self.facing_direction == 'down_left':
+            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + 5, screen_y + self.height - 5), 3)
+        elif self.facing_direction == 'down_right':
+            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, screen_y + self.height - 5), 3)
         
         # Рисуем зону атаки
         if self.attacking:
