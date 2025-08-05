@@ -1,5 +1,12 @@
 # Zelda-like Game
 
+[![Release](https://img.shields.io/github/v/release/sni10/game_zelda?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sni10/game_zelda/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/sni10/game_zelda/python-tests.yml?style=for-the-badge&logo=github-actions&logoColor=white&label=Tests)](https://github.com/sni10/game_zelda/actions/workflows/python-tests.yml)
+[![Coverage](https://img.shields.io/badge/Coverage-73%25-brightgreen?style=for-the-badge&logo=python&logoColor=white)](https://github.com/sni10/game_zelda)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Pygame](https://img.shields.io/badge/Pygame-2.6+-green?style=for-the-badge&logo=python&logoColor=white)](https://pygame.org)
+[![License](https://img.shields.io/github/license/sni10/game_zelda?style=for-the-badge&color=blue)](LICENSE)
+
 Базовая реализация игры в стиле классической 2D Zelda с использованием Python и Pygame.
 
 ## Особенности
