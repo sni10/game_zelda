@@ -88,7 +88,7 @@ class Player:
             self.attack_timer = current_time
             self.last_attack_time = current_time
     
-    def update(self, dt, world):
+    def update(self, dt, world, game_stats=None):
         """Обновление состояния игрока"""
         # Обновление атаки
         if self.attacking:
@@ -127,7 +127,7 @@ class Player:
                 if new_tile and new_tile.damages_player:
                     current_time = pygame.time.get_ticks()
                     if current_time - self.last_damage_time > self.damage_cooldown:
-                        self.take_damage(new_tile.damage_amount)
+                        self.take_damage(new_tile.damage_amount, game_stats)
                         self.last_damage_time = current_time
     
     def get_attack_rect(self):
@@ -222,12 +222,16 @@ class Player:
         """Проверка, мертв ли игрок"""
         return self.health <= 0
     
-    def take_damage(self, damage):
+    def take_damage(self, damage, game_stats=None):
         """Нанести урон игроку"""
         if not self.is_dead():
             self.health -= damage
             if self.health < 0:
                 self.health = 0
+            
+            # Уведомляем статистику о полученном уроне
+            if game_stats:
+                game_stats.record_damage_taken(damage)
     
     def heal(self, amount):
         """Восстановить здоровье игрока"""
