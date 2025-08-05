@@ -1,6 +1,8 @@
 import pygame
 import sys
 from src.core.config_loader import load_config, get_config, get_color
+from src.core.game_states import GameState
+from src.ui.menu import MainMenu
 from src.utils.debug import debug
 from src.entities.player import Player
 from src.world.world import World
@@ -18,12 +20,15 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
         
-        # Создание игрового мира
-        self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
+        # Состояние игры
+        self.state = GameState.MENU
         
-        # Создание игрока в стартовой позиции из карты
-        player_start_x, player_start_y = self.world.get_player_start_position()
-        self.player = Player(player_start_x, player_start_y)
+        # Главное меню
+        self.menu = MainMenu()
+        
+        # Игровые объекты (инициализируются при начале новой игры)
+        self.world = None
+        self.player = None
         
         # Переменные для отслеживания времени
         self.last_time = pygame.time.get_ticks()
@@ -31,67 +36,103 @@ class Game:
         # Отладочная информация
         self.show_debug = False
 
+    def start_new_game(self):
+        """Инициализация новой игры"""
+        # Создание игрового мира
+        self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
+        
+        # Создание игрока в стартовой позиции из карты
+        player_start_x, player_start_y = self.world.get_player_start_position()
+        self.player = Player(player_start_x, player_start_y)
+        
+        # Переход в игровое состояние
+        self.state = GameState.PLAYING
+
     def handle_events(self):
         """Обработка событий"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_F1:
-                    self.show_debug = not self.show_debug
-                elif event.key == pygame.K_ESCAPE:
-                    self.running = False
+                if self.state == GameState.MENU:
+                    # Обработка событий в меню
+                    action = self.menu.handle_input(event)
+                    if action == "new_game":
+                        self.start_new_game()
+                    elif action == "continue_game":
+                        # TODO: Реализовать загрузку quicksave при реализации системы сохранений
+                        print("Продолжить игру - функция будет реализована в Issue #15")
+                        # Пока что запускаем новую игру
+                        self.start_new_game()
+                    elif action == "load_game":
+                        # TODO: Реализовать диалог выбора сохранений при реализации Issue #16
+                        print("Загрузить игру - функция будет реализована в Issue #16")
+                        # Пока что запускаем новую игру
+                        self.start_new_game()
+                    elif action == "exit":
+                        self.running = False
+                elif self.state == GameState.PLAYING:
+                    # Обработка событий в игре
+                    if event.key == pygame.K_F1:
+                        self.show_debug = not self.show_debug
+                    elif event.key == pygame.K_ESCAPE:
+                        self.state = GameState.MENU
 
     def update(self, dt):
         """Обновление игровой логики"""
-        # Получение состояния клавиш
-        keys = pygame.key.get_pressed()
-        
-        # Обработка ввода игрока
-        self.player.handle_input(keys)
-        
-        # Обновление игрока (коллизии теперь проверяются внутри player.update)
-        self.player.update(dt, self.world)
-        
-        # Обновление камеры
-        self.world.update_camera(
-            self.player.x + self.player.width // 2,
-            self.player.y + self.player.height // 2,
-            get_config('WIDTH'), get_config('HEIGHT')
-        )
+        if self.state == GameState.PLAYING and self.player and self.world:
+            # Получение состояния клавиш
+            keys = pygame.key.get_pressed()
+            
+            # Обработка ввода игрока
+            self.player.handle_input(keys)
+            
+            # Обновление игрока (коллизии теперь проверяются внутри player.update)
+            self.player.update(dt, self.world)
+            
+            # Обновление камеры
+            self.world.update_camera(
+                self.player.x + self.player.width // 2,
+                self.player.y + self.player.height // 2,
+                get_config('WIDTH'), get_config('HEIGHT')
+            )
 
     def draw(self):
         """Отрисовка игры"""
-        # Очистка экрана
-        self.screen.fill(get_color('BLACK'))
-        
-        # Отрисовка мира
-        self.world.draw(self.screen, self.player.x, self.player.y)
-        
-        # Отрисовка игрока
-        self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
-        
-        # Отрисовка UI (полоска здоровья)
-        self.draw_health_bar()
-        
-        # Отладочная информация
-        if self.show_debug:
-            debug_info = [
-                f"Player: ({int(self.player.x)}, {int(self.player.y)})",
-                f"Camera: ({int(self.world.camera_x)}, {int(self.world.camera_y)})",
-                f"Direction: {self.player.facing_direction}",
-                f"Attacking: {self.player.attacking}",
-                f"FPS: {int(self.clock.get_fps())}",
-                "Controls: WASD/Arrows - Move, Space - Attack, F1 - Debug, ESC - Exit"
-            ]
+        if self.state == GameState.MENU:
+            # Отрисовка меню
+            self.menu.draw(self.screen)
+        elif self.state == GameState.PLAYING and self.player and self.world:
+            # Очистка экрана
+            self.screen.fill(get_color('BLACK'))
             
-            y_offset = 10
-            for info in debug_info:
-                debug(info, y=y_offset)
-                y_offset += 20
-        else:
-            # Показываем базовые инструкции
-            debug("Press F1 for debug info", y=get_config('HEIGHT') - 30)
+            # Отрисовка мира
+            self.world.draw(self.screen, self.player.x, self.player.y)
+            
+            # Отрисовка игрока
+            self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
+            
+            # Отрисовка UI (полоска здоровья)
+            self.draw_health_bar()
+            
+            # Отладочная информация
+            if self.show_debug:
+                debug_info = [
+                    f"Player: ({int(self.player.x)}, {int(self.player.y)})",
+                    f"Camera: ({int(self.world.camera_x)}, {int(self.world.camera_y)})",
+                    f"Direction: {self.player.facing_direction}",
+                    f"Attacking: {self.player.attacking}",
+                    f"FPS: {int(self.clock.get_fps())}",
+                    "Controls: WASD/Arrows - Move, Space - Attack, F1 - Debug, ESC - Menu"
+                ]
+                
+                y_offset = 10
+                for info in debug_info:
+                    debug(info, y=y_offset)
+                    y_offset += 20
+            else:
+                # Показываем базовые инструкции
+                debug("Press F1 for debug info, ESC for menu", y=get_config('HEIGHT') - 30)
         
         # Обновление дисплея
         pygame.display.flip()
