@@ -1,11 +1,11 @@
-name: Auto Sync Branches
+name: Auto Create Release Branch
 
 on:
   push:
-    branches: [main]
+    branches: [stage]
 
 jobs:
-  sync-branches:
+  create-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,81 +23,43 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Fetch dependent branches
+      - name: Get version from latest release
+        id: version
         run: |
-          git fetch origin stage:stage || true
-          git fetch origin dev:dev || true
-
-      - name: Create sync PR for stage
-        run: |
-          # Check if stage branch exists
-          if ! git rev-parse --verify --quiet stage; then
-            echo "Stage branch does not exist remotely, skipping sync from main to stage."
-            exit 0
-          fi
+          # Get latest release version, or start with v0.1.0 if none exists
+          LATEST_VERSION=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "v0.0.0")
           
-          # Check if stage needs sync
-          COMMITS_BEHIND=$(git rev-list --count stage..main)
-          
-          if [ "$COMMITS_BEHIND" -gt 0 ]; then
-            # Create branch for PR
-            BRANCH_NAME="auto-sync/main-to-stage-$(date +%Y%m%d-%H%M%S)"
-            git checkout -b $BRANCH_NAME main
-            git push origin $BRANCH_NAME
-            
-            # Create PR
-            gh pr create \
-              --title "🔄 Auto-sync main → stage" \
-              --body "Automatically syncing changes from main to stage branch.
-
-            **Changes included:**
-            $(git log stage..main --oneline --max-count=10)
-
-            This PR was created automatically after changes were merged to main." \
-              --base stage \
-              --head $BRANCH_NAME \
-              --label "auto-sync"
+          # Parse version numbers
+          if [[ $LATEST_VERSION =~ v([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+            MAJOR=${BASH_REMATCH[1]}
+            MINOR=${BASH_REMATCH[2]}
+            PATCH=${BASH_REMATCH[3]}
           else
-            echo "Stage is up to date with main"
+            MAJOR=0
+            MINOR=1
+            PATCH=0
           fi
+          
+          # Increment minor version (you can change this logic as needed)
+          MINOR=$((MINOR + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.0"
+          
+          echo "current_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create sync PR for dev
+      - name: Create release branch
         run: |
-          # Check if dev and stage branches exist
-          if ! git rev-parse --verify --quiet dev; then
-            echo "Dev branch does not exist remotely, skipping sync from stage to dev."
-            exit 0
-          fi
-          if ! git rev-parse --verify --quiet stage; then
-            echo "Stage branch does not exist remotely, skipping sync from stage to dev."
-            exit 0
-          fi
-
-          # Check if dev needs sync
-          COMMITS_BEHIND=$(git rev-list --count dev..stage)
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          BRANCH_NAME="release/$NEW_VERSION"
           
-          if [ "$COMMITS_BEHIND" -gt 0 ]; then
-            # Create branch for PR
-            BRANCH_NAME="auto-sync/stage-to-dev-$(date +%Y%m%d-%H%M%S)"
-            git checkout -b $BRANCH_NAME stage
-            git push origin $BRANCH_NAME
-            
-            # Create PR
-            gh pr create \
-              --title "🔄 Auto-sync stage → dev" \
-              --body "Automatically syncing changes from stage to dev branch.
-
-            **Changes included:**
-            $(git log dev..stage --oneline --max-count=10)
-
-            This PR was created automatically after stage was updated." \
-              --base dev \
-              --head $BRANCH_NAME \
-              --label "auto-sync"
-          else
-            echo "Dev is up to date with stage"
-          fi
+          # Create and push release branch
+          git checkout -b $BRANCH_NAME stage
+          git push origin $BRANCH_NAME
+          
+          echo "✅ Created release branch: $BRANCH_NAME"
+          echo "🎯 Ready for release: $NEW_VERSION"
+          echo "👉 Push this branch wherever you want!"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
