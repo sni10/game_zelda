@@ -1,6 +1,7 @@
 import pygame
-import random
+import os
 from src.core.config_loader import get_config, get_color
+from src.world.terrain import load_map_from_file, TerrainType
 
 
 class World:
@@ -14,55 +15,37 @@ class World:
         self.tiles_x = width // self.tile_size
         self.tiles_y = height // self.tile_size
         
-        # Создание карты препятствий
+        # Загружаем карту из файла
+        map_file = os.path.join('data', 'world_map.txt')
+        self.terrain_tiles, self.player_start_x, self.player_start_y = load_map_from_file(map_file)
+        
+        # Создаем список препятствий для обратной совместимости
         self.obstacles = []
-        self.generate_obstacles()
+        self.generate_obstacles_from_terrain()
         
         # Камера
         self.camera_x = 0
         self.camera_y = 0
         
-    def generate_obstacles(self):
-        """Генерация препятствий на карте"""
-        # Создаем границы мира
-        # Верхняя граница
-        for x in range(0, self.width, self.tile_size):
-            self.obstacles.append(pygame.Rect(x, 0, self.tile_size, self.tile_size))
+    def generate_obstacles_from_terrain(self):
+        """Генерация препятствий из загруженной terrain карты"""
+        for tile in self.terrain_tiles:
+            if tile.is_solid:  # Только непроходимые тайлы считаются препятствиями
+                self.obstacles.append(tile.rect)
+    
+    def get_terrain_at(self, x, y):
+        """Получить тайл ландшафта в указанной позиции"""
+        tile_x = int(x // self.tile_size) * self.tile_size
+        tile_y = int(y // self.tile_size) * self.tile_size
         
-        # Нижняя граница
-        for x in range(0, self.width, self.tile_size):
-            self.obstacles.append(pygame.Rect(x, self.height - self.tile_size, self.tile_size, self.tile_size))
-        
-        # Левая граница
-        for y in range(0, self.height, self.tile_size):
-            self.obstacles.append(pygame.Rect(0, y, self.tile_size, self.tile_size))
-        
-        # Правая граница
-        for y in range(0, self.height, self.tile_size):
-            self.obstacles.append(pygame.Rect(self.width - self.tile_size, y, self.tile_size, self.tile_size))
-        
-        # Случайные препятствия внутри мира
-        obstacle_count = 150  # количество случайных препятствий
-        for _ in range(obstacle_count):
-            # Избегаем создания препятствий в центре (стартовая зона)
-            while True:
-                x = random.randint(2, self.tiles_x - 3) * self.tile_size
-                y = random.randint(2, self.tiles_y - 3) * self.tile_size
-                
-                # Проверяем, что препятствие не в центральной зоне
-                center_x = self.width // 2
-                center_y = self.height // 2
-                if abs(x - center_x) > 100 or abs(y - center_y) > 100:
-                    break
-            
-            # Создаем препятствие размером 1x1 или 2x2 тайла
-            size = random.choice([1, 2])
-            for dx in range(size):
-                for dy in range(size):
-                    obstacle_x = x + dx * self.tile_size
-                    obstacle_y = y + dy * self.tile_size
-                    if obstacle_x < self.width - self.tile_size and obstacle_y < self.height - self.tile_size:
-                        self.obstacles.append(pygame.Rect(obstacle_x, obstacle_y, self.tile_size, self.tile_size))
+        for tile in self.terrain_tiles:
+            if tile.x == tile_x and tile.y == tile_y:
+                return tile
+        return None
+    
+    def get_player_start_position(self):
+        """Получить стартовую позицию игрока"""
+        return self.player_start_x, self.player_start_y
     
     def update_camera(self, player_x, player_y, screen_width, screen_height):
         """Обновление позиции камеры для следования за игроком"""
@@ -115,26 +98,13 @@ class World:
                 pygame.draw.line(screen, (0, 80, 0), (0, screen_y), (screen_width, screen_y), 1)
     
     def draw_obstacles(self, screen):
-        """Отрисовка препятствий"""
-        visible_obstacles = self.get_visible_obstacles(screen.get_width(), screen.get_height())
+        """Отрисовка ландшафта"""
+        # Отрисовываем все видимые тайлы ландшафта
+        camera_rect = pygame.Rect(self.camera_x, self.camera_y, screen.get_width(), screen.get_height())
         
-        for obstacle in visible_obstacles:
-            # Позиция препятствия на экране
-            screen_x = obstacle.x - self.camera_x
-            screen_y = obstacle.y - self.camera_y
-            
-            # Определяем тип препятствия по позиции для разнообразия
-            if (obstacle.x == 0 or obstacle.x == self.width - self.tile_size or 
-                obstacle.y == 0 or obstacle.y == self.height - self.tile_size):
-                # Границы мира - темно-серые
-                color = get_color('DARK_GRAY')
-            else:
-                # Обычные препятствия - коричневые
-                color = get_color('BROWN')
-            
-            pygame.draw.rect(screen, color, (screen_x, screen_y, obstacle.width, obstacle.height))
-            # Добавляем границу для лучшей видимости
-            pygame.draw.rect(screen, get_color('BLACK'), (screen_x, screen_y, obstacle.width, obstacle.height), 1)
+        for tile in self.terrain_tiles:
+            if camera_rect.colliderect(tile.rect):
+                tile.draw(screen, self.camera_x, self.camera_y)
     
     def draw_minimap(self, screen, player_x, player_y):
         """Отрисовка мини-карты в углу экрана"""
