@@ -241,16 +241,22 @@ class TestPlayer:
         swamp_tile.damage_amount = 5
         swamp_tile.speed_modifier = 1.0
         
-        # Mock world to return the damaging tile
+        # Mock world to return the damaging tile and allow movement
         self.mock_world.get_terrain_at.return_value = swamp_tile
+        self.mock_world.check_collision.return_value = False  # Allow movement
         
         with patch('pygame.time.get_ticks') as mock_time:
-            # First damage
-            mock_time.return_value = 1000
+            # First damage - ensure player moves by setting direction and sufficient dt
+            mock_time.return_value = 1001  # Must be > damage_cooldown (1000) for first damage
             initial_health = self.player.health
+            initial_x = self.player.x
             self.player.direction_x = 1
+            self.player.direction_y = 0
+            
             self.player.update(0.1, self.mock_world)
             
+            # Verify player actually moved
+            assert self.player.x > initial_x
             # Health should decrease
             assert self.player.health == initial_health - 5
             
@@ -356,13 +362,19 @@ class TestPlayer:
         damage_tile.damage_amount = 10  # More damage than current health
         damage_tile.speed_modifier = 1.0
         
+        # Mock world to return the damaging tile and allow movement
         self.mock_world.get_terrain_at.return_value = damage_tile
+        self.mock_world.check_collision.return_value = False  # Allow movement
         
         with patch('pygame.time.get_ticks') as mock_time:
-            mock_time.return_value = 1000
+            mock_time.return_value = 1001  # Must be > damage_cooldown (1000) for first damage
+            initial_x = self.player.x
             self.player.direction_x = 1
+            self.player.direction_y = 0
             self.player.update(0.1, self.mock_world)
             
+            # Verify player actually moved
+            assert self.player.x > initial_x
             # Health should be 0, not negative
             assert self.player.health == 0
 
