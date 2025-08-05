@@ -243,6 +243,18 @@ class Game:
                 # Создаем игрока с временными координатами
                 self.player = Player(0, 0)
             
+            # Инициализация статистики игры (если еще не создана)
+            if not self.game_stats:
+                self.game_stats = GameStats()
+            
+            # Инициализация Game Over экрана (если еще не создан)
+            if not self.game_over_screen:
+                self.game_over_screen = GameOverScreen(
+                    get_config('WIDTH'), 
+                    get_config('HEIGHT'), 
+                    self.game_stats
+                )
+            
             # Применяем загруженные данные
             self.save_system.apply_save_data_to_player(self.player, save_data)
             self.save_system.apply_save_data_to_world(self.world, save_data)
