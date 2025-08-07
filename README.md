@@ -92,7 +92,9 @@ game_zelda/
 │   └── utils/                # Утилиты
 │       └── debug.py          # Отладочные функции
 ├── data/                     # Игровые данные
-│   └── world_map.txt         # ASCII карта мира
+│   ├── main_world.txt        # ASCII карта основного мира
+│   ├── cave_world.txt        # ASCII карта мира-пещеры с тоннелями
+│   └── underground_world.txt # ASCII карта подземного мира
 ├── saves/                    # Папка сохранений
 │   └── quicksave.json        # Быстрое сохранение
 ├── docs/                     # Документация
