@@ -12,6 +12,8 @@ class TerrainType(Enum):
     SWAMP = 'M'      # Болото (проходимо, наносит урон)
     SAND = 'S'       # Зыбучие пески (проходимо, замедляет и наносит урон)
     PLAYER_START = '@'  # Стартовая позиция игрока
+    CAVE_WALL = 'B'  # Стены пещеры (непроходимо)
+    CAVE_SPECIAL = '+'  # Специальные элементы пещеры (проходимо)
 
 
 class TerrainTile:
@@ -23,7 +25,7 @@ class TerrainTile:
         self.rect = pygame.Rect(x, y, 32, 32)  # Размер тайла 32x32
         
         # Свойства тайла
-        self.is_solid = terrain_type in [TerrainType.MOUNTAIN, TerrainType.WATER]
+        self.is_solid = terrain_type in [TerrainType.MOUNTAIN, TerrainType.WATER, TerrainType.CAVE_WALL]
         self.damages_player = terrain_type in [TerrainType.SWAMP, TerrainType.SAND]
         self.slows_player = terrain_type == TerrainType.SAND
         self.damage_amount = 1 if self.damages_player else 0
@@ -38,7 +40,9 @@ class TerrainTile:
             TerrainType.TREE: (0, 150, 0),     # Темно-зеленый
             TerrainType.SWAMP: (100, 50, 0),   # Коричнево-зеленый
             TerrainType.SAND: (200, 180, 100), # Песочный
-            TerrainType.PLAYER_START: get_color('DARK_GREEN')
+            TerrainType.PLAYER_START: get_color('DARK_GREEN'),
+            TerrainType.CAVE_WALL: (101, 67, 33),  # Темно-коричневый для стен пещеры
+            TerrainType.CAVE_SPECIAL: (255, 215, 0)  # Золотой для специальных элементов
         }
         return color_map.get(self.terrain_type, get_color('WHITE'))
     

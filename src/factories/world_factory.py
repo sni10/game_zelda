@@ -166,13 +166,24 @@ class CaveWorldFactory(WorldFactory):
     
     def create_world(self, world_id: str, size: Tuple[int, int]) -> LayeredWorld:
         """Создать мир-пещеру с тоннелями"""
-        width, height = size
+        from src.world.terrain import load_map_from_file
         
-        # Создаем поверхностную карту
-        surface_map = self._create_cave_surface_map(width, height)
+        # Загружаем карту из файла cave_world.txt
+        try:
+            terrain_tiles, _, _ = load_map_from_file("data/cave_world.txt")
+            surface_map = self._convert_tiles_to_map(terrain_tiles)
+            # Используем размеры загруженной карты
+            map_width = len(surface_map[0]) if surface_map else 25
+            map_height = len(surface_map) if surface_map else 19
+        except:
+            # Fallback к программной генерации если файл не найден
+            width, height = size
+            surface_map = self._create_cave_surface_map(width, height)
+            map_width = width // 32
+            map_height = height // 32
         
-        # Создаем подземную карту с тоннелями
-        underground_map = self._create_underground_map(width, height)
+        # Создаем подземную карту с тоннелями того же размера
+        underground_map = self._create_underground_map_sized(map_width, map_height)
         
         world = LayeredWorld(world_id, surface_map, underground_map)
         return world
@@ -204,6 +215,27 @@ class CaveWorldFactory(WorldFactory):
         
         return portals
     
+    def _convert_tiles_to_map(self, terrain_tiles: List) -> List[List[str]]:
+        """Преобразовать TerrainTile объекты в карту символов"""
+        if not terrain_tiles:
+            return []
+            
+        # Определяем размеры карты
+        max_x = max(tile.x for tile in terrain_tiles) // 32 + 1
+        max_y = max(tile.y for tile in terrain_tiles) // 32 + 1
+        
+        # Создаем пустую карту
+        surface_map = [['.' for _ in range(max_x)] for _ in range(max_y)]
+        
+        # Заполняем карту символами из тайлов
+        for tile in terrain_tiles:
+            x = tile.x // 32
+            y = tile.y // 32
+            if 0 <= x < max_x and 0 <= y < max_y:
+                surface_map[y][x] = tile.terrain_type.value
+                
+        return surface_map
+    
     def _create_cave_surface_map(self, width: int, height: int) -> List[List[str]]:
         """Создать поверхностную карту пещеры"""
         tile_width = width // 32
@@ -224,6 +256,22 @@ class CaveWorldFactory(WorldFactory):
             surface_map.append(row)
         
         return surface_map
+    
+    def _create_underground_map_sized(self, tile_width: int, tile_height: int) -> List[List[str]]:
+        """Создать подземную карту с точными размерами в тайлах"""
+        underground_map = []
+        for y in range(tile_height):
+            row = []
+            for x in range(tile_width):
+                if self._is_tunnel_path(x, y, tile_width, tile_height):
+                    row.append('P')  # Путь тоннеля
+                elif self._is_tunnel_wall(x, y, tile_width, tile_height):
+                    row.append('W')  # Стена тоннеля
+                else:
+                    row.append('.')  # Пустое подземное пространство
+            underground_map.append(row)
+        
+        return underground_map
     
     def _create_underground_map(self, width: int, height: int) -> List[List[str]]:
         """Создать подземную карту с тоннелями"""
