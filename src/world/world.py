@@ -4,23 +4,24 @@ from src.core.config_loader import get_config, get_color
 from src.world.terrain import load_map_from_file, TerrainType
 
 
+from typing import List
+
 class World:
-    def __init__(self, width=2000, height=2000):
+    def __init__(self, map_file: str, width=2000, height=2000):
         """Инициализация игрового мира"""
         self.width = width
         self.height = height
-        
+
         # Размер тайлов для сетки
         self.tile_size = 32
         self.tiles_x = width // self.tile_size
         self.tiles_y = height // self.tile_size
-        
+
         # Загружаем карту из файла
-        map_file = os.path.join('data', 'world_map.txt')
         self.terrain_tiles, self.player_start_x, self.player_start_y = load_map_from_file(map_file)
-        
+
         # Создаем список препятствий для обратной совместимости
-        self.obstacles = []
+        self.obstacles: List[pygame.Rect] = []
         self.generate_obstacles_from_terrain()
         
         # Камера
