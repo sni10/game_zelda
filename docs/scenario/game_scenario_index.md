@@ -7,30 +7,17 @@
 ## Акт I: Выживание и Надежда
 
 *   **Статус:** Проработан
-*   **Ссылка на полный документ:** [Акт I - Полная версия](./game_scenario_act1_final_v2.md)
+*   **Ссылка на полный документ:** [Акт I - Расширенная техническая версия](./game_scenario_act1_extended.md)
 
 ### Содержание Акта I
 
-*   [**Пролог: Пепел и Искры**](./game_scenario_act1_final_v2.md#prologue)
-    *   [Сцена 1: Последний урок](./game_scenario_act1_final_v2.md#prologue-scene1)
-    *   [Сцена 2: Нападение](./game_scenario_act1_final_v2.md#prologue-scene2)
-    *   [Сцена 3: Подземный побег](./game_scenario_act1_final_v2.md#prologue-scene3)
-*   [**Глава 1: У реки**](./game_scenario_act1_final_v2.md#chapter1)
-    *   [Сцена 1: Новый мир](./game_scenario_act1_final_v2.md#chapter1-scene1)
-    *   [Сцена 2: Первая ночь](./game_scenario_act1_final_v2.md#chapter1-scene2)
-*   [**Глава 2: Дорога домой**](./game_scenario_act1_final_v2.md#chapter2)
-    *   [Сцена 1: Возвращение](./game_scenario_act1_final_v2.md#chapter2-scene1)
-    *   [Сцена 2: Восстановление основ](./game_scenario_act1_final_v2.md#chapter2-scene2)
-*   [**Глава 3: Город выживших**](./game_scenario_act1_final_v2.md#chapter3)
-    *   [Сцена 1: Прибытие в "Приют"](./game_scenario_act1_final_v2.md#chapter3-scene1)
-    *   [Сцена 2: Лицо из прошлого](./game_scenario_act1_final_v2.md#chapter3-scene2)
-    *   [Сцена 3: Искра надежды](./game_scenario_act1_final_v2.md#chapter3-scene3)
-*   [**Глава 4: Первые следы и первая искра**](./game_scenario_act1_final_v2.md#chapter4)
-    *   [Сцена 1: Гиблые топи](./game_scenario_act1_final_v2.md#chapter4-scene1)
-    *   [Сцена 2: Битва за брата](./game_scenario_act1_final_v2.md#chapter4-scene2)
-    *   [Сцена 3: Таинственный лут](./game_scenario_act1_final_v2.md#chapter4-scene3)
-*   [**Глава 5: Рефлексия у наковальни**](./game_scenario_act1_final_v2.md#chapter5)
-    *   [Сцена 1: Возвращение домой и новая цель](./game_scenario_act1_final_v2.md#chapter5-scene1)
+*   [**Заметки по реализации Z-уровней**](./game_scenario_act1_extended.md#z-level-notes)
+*   [**Пролог: Пепел и Искры**](./game_scenario_act1_extended.md#prologue)
+*   [**Глава 1: У реки**](./game_scenario_act1_extended.md#chapter1)
+*   [**Глава 2: Дорога домой**](./game_scenario_act1_extended.md#chapter2)
+*   [**Глава 3: Город выживших**](./game_scenario_act1_extended.md#chapter3)
+*   [**Глава 4: Первые следы и первая искра**](./game_scenario_act1_extended.md#chapter4)
+*   [**Глава 5: Рефлексия у наковальни**](./game_scenario_act1_extended.md#chapter5)
 
 ---
 
