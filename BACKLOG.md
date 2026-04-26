@@ -71,10 +71,24 @@
 8. [x] Подтверждение удаления (Del → Y/N); quicksave удалить нельзя.
 9. [ ] Превью миникарты в слоте (опц., отложено).
 
-### 🟢 v0.3.3 — Автосейв
-- Раз в N минут (config) или при значимых событиях (level-up, смена зоны)
-- Отдельный файл `autosave.json`, виден в меню как «🕐 Автосохранение»
-- Лимит N автосейвов с ротацией
+### ✅ v0.3.3 — Автосейв (сделано)
+
+**Конфиг (`[autosave]` в `config.ini`):**
+- `autosave_enabled` (default `true`) — глобальный выключатель.
+- `autosave_interval_minutes` (default `5.0`) — интервал периодического автосейва.
+- `autosave_limit` (default `3`) — максимум хранимых автосейвов, дальше ротация по mtime.
+- `autosave_on_level_up` (default `true`) — отдельный триггер на level-up.
+
+**Реализация:**
+1. [x] `SaveSystem.autosave(player, world, ..., reason, limit)` — пишет в `saves/autosave/autosave_NN.json` с автоматическим выбором свободного слота (либо самого старого по mtime).
+2. [x] `list_autosaves()` (свежие сверху) / `get_latest_autosave_metadata()` / `load_from_autosave(slot_id)` / `delete_autosave(slot_id)`.
+3. [x] Поле `autosave_reason` в save_data → отображается в UI как «`(periodic)`», «`(level_up)`», ...
+4. [x] Game: `_update_autosave(dt)` тикает таймер, ловит level-up по `player.level`, сбрасывается на `start_new_game`/`quickload`/`_apply_loaded_save_data`.
+5. [x] `Game.trigger_autosave(reason)` — публичная точка для будущих триггеров (смена зоны и т.п.).
+6. [x] `SaveLoadMenu.refresh()` подкладывает автосейвы в LOAD_MENU между quicksave и manual-слотами с лейблом «🕐 Автосохранение #NN (reason)».
+7. [x] Enter в LOAD_MENU → `load_autosave`; Del → `delete_autosave` (через ту же модалку Y/N, что у manual).
+8. [x] `MainMenu.has_saves()` теперь учитывает `saves/autosave/`.
+9. [x] Тесты: `tests/unit/test_autosave.py` (10) — round-trip, ротация, сортировка, ротация по уменьшению лимита, удаление, has_saves; +3 UI-теста в `test_save_load_menu.py` (entries / Enter / Del-модалка для autosave).
 
 ---
 
@@ -134,7 +148,7 @@
 |--------|------|-----------|
 | ✅ **v0.3.1** | Save/Load fix | Bug fixes из эпика «v0.3.1 — фикс F9» — **сделано** |
 | ✅ **v0.3.2** | Save/Load UI | Слоты (10 manual + quicksave), LOAD/SAVE меню, F6 — **сделано** |
-| **v0.3.3** | Autosave | Автосейвы + ротация |
+| ✅ **v0.3.3** | Autosave | Автосейвы (периодика + level-up) с ротацией по `autosave_limit` — **сделано** |
 | **v0.4.0** | Inventory | Инвентарь, магазин, зелья |
 | **v0.5.0** | Combat depth | Дальние оружия, магия, комбо, новые враги |
 | **v0.6.0** | Audio + Sprites | Звук, музыка, анимация спрайтов |
