@@ -24,6 +24,8 @@ class Player:
         self.direction_x = 0
         self.direction_y = 0
         self.facing_direction = 'down'
+        # Были ли обе оси нажаты в прошлом кадре (для залочки диагонали)
+        self._prev_both_axes = False
 
         # Делегаты: здоровье и боевая система
         self._stats = PlayerStats(get_config('PLAYER_MAX_HEALTH'))
@@ -188,6 +190,17 @@ class Player:
         except (KeyError, IndexError):
             return False
 
+    def _set_cardinal_facing(self):
+        """Установить кардинальное facing из текущего direction."""
+        if self.direction_x == -1:
+            self.facing_direction = 'left'
+        elif self.direction_x == 1:
+            self.facing_direction = 'right'
+        elif self.direction_y == -1:
+            self.facing_direction = 'up'
+        elif self.direction_y == 1:
+            self.facing_direction = 'down'
+
     def handle_input(self, keys):
         """Обработка ввода с клавиатуры"""
         # Сброс направления
@@ -210,25 +223,35 @@ class Player:
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.direction_y = 1
             
-        # Определяем направление взгляда на основе движения (8 направлений)
-        if self.direction_x != 0 or self.direction_y != 0:
+        # Определяем направление взгляда на основе движения (8 направлений).
+        # Логика:
+        #  - Обе оси нажаты → facing = диагональ (всегда)
+        #  - Одна ось нажата И в прошлом кадре были обе → "отпускание" → facing сохраняется
+        #  - Одна ось нажата И в прошлом кадре тоже одна → facing = кардинальное
+        #  - Ничего не нажато → facing сохраняется (можно бить стоя)
+        both_axes = (self.direction_x != 0 and self.direction_y != 0)
+
+        if both_axes:
+            # Чистая диагональ
             if self.direction_x == -1 and self.direction_y == -1:
                 self.facing_direction = 'up_left'
             elif self.direction_x == 1 and self.direction_y == -1:
                 self.facing_direction = 'up_right'
             elif self.direction_x == -1 and self.direction_y == 1:
                 self.facing_direction = 'down_left'
-            elif self.direction_x == 1 and self.direction_y == 1:
+            else:
                 self.facing_direction = 'down_right'
-            elif self.direction_x == -1:
-                self.facing_direction = 'left'
-            elif self.direction_x == 1:
-                self.facing_direction = 'right'
-            elif self.direction_y == -1:
-                self.facing_direction = 'up'
-            elif self.direction_y == 1:
-                self.facing_direction = 'down'
-            
+        elif self.direction_x != 0 or self.direction_y != 0:
+            # Одна ось нажата
+            if not self._prev_both_axes:
+                # В прошлом кадре тоже была одна ось (или ноль) → обновляем
+                self._set_cardinal_facing()
+            # Иначе: в прошлом кадре были обе → только что отпустили вторую
+            # клавишу → сохраняем диагональный facing (залочка на 1 кадр)
+        # Ничего не нажато → facing остаётся
+
+        self._prev_both_axes = both_axes
+
         # Нормализация диагонального движения
         if self.direction_x != 0 and self.direction_y != 0:
             self.direction_x *= 0.707  # 1/sqrt(2)
