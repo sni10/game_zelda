@@ -16,6 +16,7 @@ from src.core.game_stats import GameStats
 from src.ui.menu import MainMenu
 from src.ui.game_over import GameOverScreen
 from src.ui.hud import HUD
+from src.ui.save_load_menu import SaveLoadMenu
 from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
@@ -68,6 +69,12 @@ class Game:
         # Система сохранений
         self.save_system = SaveSystem()
 
+        # Меню слотов сохранений (load/save) — создаётся лениво, чтобы не
+        # инициализировать pygame.font раньше чем это понадобится. См. v0.3.2.
+        self.save_load_menu: SaveLoadMenu = None
+        # Куда возвращаться из SAVE_MENU: PLAYING (если открыт по F6) или MENU.
+        self._save_menu_return_state = GameState.PLAYING
+
     # --- Логирование -------------------------------------------------------
 
     def log(self, message, level="INFO"):
@@ -113,7 +120,8 @@ class Game:
         self.hud = HUD()
 
         print("Игра запущена. WASD/стрелки - движение, Space - атака, "
-              "1..4 - оружие, F1 - debug, F5/F9 - save/load, ESC - меню")
+              "1..4 - оружие, F1 - debug, F5 - quicksave, F6 - save menu, "
+              "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
 
     # --- Обработка событий -------------------------------------------------
@@ -133,6 +141,8 @@ class Game:
                 self._handle_playing_key(event)
             elif self.state == GameState.GAME_OVER:
                 self._handle_game_over_key(event)
+            elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU):
+                self._handle_save_load_menu_key(event)
 
     def _handle_menu_key(self, event):
         action = self.menu.handle_input(event)
@@ -141,12 +151,8 @@ class Game:
         elif action == "continue_game":
             self.quickload()
         elif action == "load_game":
-            # Полноценное «Загрузить игру» пока без UI слотов (см. v0.3.2 в BACKLOG.md):
-            # используем существующий quicksave-файл, если он есть.
-            if self.save_system.quicksave_exists():
-                self.quickload()
-            else:
-                print("Нет файлов сохранения")
+            # v0.3.2 — открываем полноценное меню слотов
+            self._open_load_menu()
         elif action == "exit":
             self.running = False
 
@@ -155,6 +161,9 @@ class Game:
             self.show_debug = not self.show_debug
         elif event.key == pygame.K_F5:
             self.quicksave()
+        elif event.key == pygame.K_F6:
+            # v0.3.2 — выбор manual-слота для сохранения
+            self._open_save_menu()
         elif event.key == pygame.K_F9:
             self.quickload()
         elif event.key == pygame.K_ESCAPE:
@@ -171,6 +180,115 @@ class Game:
                         f"(reach={w.reach}, dmg={w.damage})",
                         "IMPORTANT",
                     )
+
+    def _ensure_save_load_menu(self, mode):
+        """Создать или переинициализировать SaveLoadMenu в нужном режиме."""
+        if self.save_load_menu is None:
+            self.save_load_menu = SaveLoadMenu(self.save_system, mode=mode)
+        else:
+            self.save_load_menu.set_mode(mode)
+        self.save_load_menu.refresh()
+
+    def _open_load_menu(self):
+        """Открыть меню загрузки. Доступно из главного меню."""
+        self._ensure_save_load_menu(SaveLoadMenu.MODE_LOAD)
+        # Из LOAD_MENU всегда возвращаемся в главное меню
+        self.state = GameState.LOAD_MENU
+
+    def _open_save_menu(self):
+        """Открыть меню сохранения (F6). Только во время игры."""
+        if not self.player or not self.world:
+            print("Нет активной игры для сохранения!")
+            return
+        self._ensure_save_load_menu(SaveLoadMenu.MODE_SAVE)
+        self._save_menu_return_state = GameState.PLAYING
+        self.state = GameState.SAVE_MENU
+
+    def _handle_save_load_menu_key(self, event):
+        if self.save_load_menu is None:
+            self.state = GameState.MENU
+            return
+        action = self.save_load_menu.handle_input(event)
+        if action is None:
+            return
+
+        atype = action.get("type")
+        if atype == "back":
+            if self.state == GameState.SAVE_MENU:
+                self.state = self._save_menu_return_state
+            else:
+                self.state = GameState.MENU
+            return
+
+        if atype == "load_quicksave":
+            self.quickload()
+            return
+
+        if atype == "load_slot":
+            slot_id = action["slot_id"]
+            save_data = self.save_system.load_from_slot(slot_id)
+            if save_data is None:
+                print(f"   ❌ Слот {slot_id}: ошибка загрузки")
+                self.save_load_menu.refresh()
+                return
+            self._apply_loaded_save_data(save_data)
+            print(f"   ✅ Загружен слот {slot_id}")
+            return
+
+        if atype == "save_slot":
+            slot_id = action["slot_id"]
+            ok = self.save_system.save_to_slot(
+                slot_id,
+                self.player,
+                self.world,
+                game_stats=self.game_stats,
+                pickup_manager=self.pickup_manager,
+                enemy_manager=self.world.enemy_manager,
+            )
+            print(f"   ✅ Сохранено в слот {slot_id}" if ok
+                  else f"   ❌ Ошибка сохранения в слот {slot_id}")
+            self.save_load_menu.refresh()
+            return
+
+        if atype == "delete_slot":
+            ok = self.save_system.delete_slot(action["slot_id"])
+            print(f"   🗑 Слот {action['slot_id']} удалён" if ok
+                  else f"   ❌ Не удалось удалить слот {action['slot_id']}")
+            self.save_load_menu.refresh()
+            return
+
+    def _apply_loaded_save_data(self, save_data):
+        """Применить уже загруженные save_data к текущему состоянию игры.
+
+        Та же логика, что и в quickload(), но без чтения файла.
+        """
+        if not self.player or not self.world:
+            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.player = Player(0, 0)
+        if not self.pickup_manager:
+            self.pickup_manager = PickupManager()
+            self.world.enemy_manager.pickup_manager = self.pickup_manager
+        if not self.game_stats:
+            self.game_stats = GameStats()
+        if not self.game_over_screen:
+            self.game_over_screen = GameOverScreen(
+                get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
+            )
+        if not self.hud:
+            self.hud = HUD()
+
+        self.save_system.apply_save_data_to_player(self.player, save_data)
+        self.save_system.apply_save_data_to_world(self.world, save_data)
+        self.save_system.apply_save_data_to_enemies(
+            self.world.enemy_manager, save_data
+        )
+        self.save_system.apply_save_data_to_pickups(
+            self.pickup_manager, save_data
+        )
+        self.save_system.apply_save_data_to_game_stats(
+            self.game_stats, save_data
+        )
+        self.state = GameState.PLAYING
 
     def _handle_game_over_key(self, event):
         if not self.game_over_screen:
@@ -268,13 +386,17 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD - Move | Shift - Sprint | Space - Attack | 1..4 - Weapon | "
-                    "F1 - Debug | F5/F9 - Save/Load | ESC - Menu",
+                    "WASD | Shift | Space | 1..4 | F1 - Debug | "
+                    "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
 
         elif self.state == GameState.GAME_OVER and self.game_over_screen:
             self.game_over_screen.draw(self.screen)
+
+        elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU) \
+                and self.save_load_menu is not None:
+            self.save_load_menu.draw(self.screen)
 
         pygame.display.flip()
 
@@ -295,7 +417,7 @@ class Game:
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
             "Controls: WASD - Move, Shift - Sprint, Space - Attack, 1..4 - Weapon",
-            "F1 - Debug, F5 - Save, F9 - Load, ESC - Menu",
+            "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10
         for line in info:

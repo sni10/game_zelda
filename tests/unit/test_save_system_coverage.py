@@ -33,15 +33,27 @@ class TestSaveSystemCoverage:
             shutil.rmtree(self.temp_dir)
     
     def test_save_game_exception_handling(self):
-        """Test save_game exception handling"""
-        # Create invalid save system to trigger exception
+        """Test save_game exception handling.
+
+        v0.3.2: _write_save теперь сам создаёт parent через os.makedirs,
+        поэтому «несуществующий путь» больше не падает. Чтобы гарантированно
+        вызвать исключение — используем имя файла с нулевым байтом, оно
+        невалидно на любой ОС.
+        """
         invalid_save_system = SaveSystem()
-        invalid_save_system.saves_dir = "/invalid/path/that/does/not/exist"
-        
+        invalid_save_system.saves_dir = self.temp_dir
+
         player = Player(100, 200)
-        world = type('MockWorld', (), {'width': 1000, 'height': 1000, 'camera_x': 0, 'camera_y': 0})()
-        
-        result = invalid_save_system.save_game(player, world)
+        world = type(
+            'MockWorld', (),
+            {'width': 1000, 'height': 1000,
+             'camera_x': 0, 'camera_y': 0, 'enemy_manager': None}
+        )()
+
+        # NUL-байт → ValueError в open(), ловится except в save_game.
+        result = invalid_save_system.save_game(
+            player, world, filename="bad\x00name.json"
+        )
         assert result is False
     
     def test_load_game_file_not_exists(self):

@@ -36,79 +36,89 @@ class SaveSystem:
     # Обязательные ключи внутри player
     _REQUIRED_PLAYER_KEYS = ("x", "y", "health", "max_health")
 
+    # Лимит ручных слотов (см. v0.3.2 в BACKLOG.md)
+    MANUAL_SLOT_LIMIT = 10
+    # Подпапка для ручных слотов, чтобы они не смешивались с quicksave/autosave
+    MANUAL_SUBDIR = "manual"
+    # Имя файла слота: slot_01.json ... slot_10.json
+    _SLOT_FILENAME_FMT = "slot_{:02d}.json"
+
     def __init__(self):
         self.save_version = self.SAVE_VERSION
         self.saves_dir = "saves"
         self.quicksave_file = "quicksave.json"
+        self.manual_dir = os.path.join(self.saves_dir, self.MANUAL_SUBDIR)
 
-        # Создаём папку сохранений если её нет
+        # Создаём папки сохранений если их нет
         if not os.path.exists(self.saves_dir):
             os.makedirs(self.saves_dir)
+        if not os.path.exists(self.manual_dir):
+            os.makedirs(self.manual_dir)
 
     # --- Сохранение --------------------------------------------------------
 
     def save_game(self, player, world, game_stats=None, pickup_manager=None,
                   enemy_manager=None, filename=None):
-        """Сохранение игрового состояния в JSON файл.
+        """Сохранение игрового состояния в quicksave-файл (или filename).
 
-        Args:
-            player: объект игрока
-            world: объект мира (содержит enemy_manager, если enemy_manager
-                   не передан явно)
-            game_stats: GameStats (опционально, .to_dict() будет вызван)
-            pickup_manager: PickupManager (опционально)
-            enemy_manager: EnemyManager (опционально, по умолчанию берётся
-                           из world.enemy_manager)
-            filename: имя файла (по умолчанию quicksave.json)
-
-        Returns:
-            bool: True если сохранение успешно, False если ошибка.
+        Manual-слоты сохраняются через :meth:`save_to_slot` — это сделано
+        специально, чтобы quicksave (`saves/quicksave.json`) и слоты
+        (`saves/manual/slot_NN.json`) физически не пересекались.
         """
         try:
             if filename is None:
                 filename = self.quicksave_file
-
             filepath = os.path.join(self.saves_dir, filename)
-
-            # Авто-определение enemy_manager из world
-            if enemy_manager is None and world is not None:
-                enemy_manager = getattr(world, "enemy_manager", None)
-
-            save_data = {
-                "version": self.save_version,
-                "timestamp": datetime.now().isoformat() + "Z",
-                "player": self._serialize_player(player),
-                "world": self._serialize_world(world),
-                "enemies": (
-                    enemy_manager.serialize()
-                    if enemy_manager is not None and hasattr(enemy_manager, "serialize")
-                    else None
-                ),
-                "pickups": (
-                    pickup_manager.serialize()
-                    if pickup_manager is not None and hasattr(pickup_manager, "serialize")
-                    else []
-                ),
-                "game_stats": (
-                    game_stats.to_dict()
-                    if game_stats is not None and hasattr(game_stats, "to_dict")
-                    else (game_stats if isinstance(game_stats, dict) else {})
-                ),
-                "inventory": {
-                    "items": [],  # зарезервировано под будущий инвентарь
-                    "gold": getattr(player, "coins", 0) if player else 0,
-                },
-            }
-
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(save_data, f, indent=2, ensure_ascii=False)
-
-            print(f"Игра сохранена: {filename}")
-            return True
-
+            return self._write_save(
+                filepath, player, world, game_stats, pickup_manager, enemy_manager
+            )
         except Exception as e:
             print(f"Ошибка сохранения: {e}")
             return False
+
+    def _write_save(self, filepath, player, world, game_stats=None,
+                    pickup_manager=None, enemy_manager=None):
+        """Низкоуровневая запись save_data в указанный путь."""
+        # Авто-определение enemy_manager из world
+        if enemy_manager is None and world is not None:
+            enemy_manager = getattr(world, "enemy_manager", None)
+
+        save_data = {
+            "version": self.save_version,
+            "timestamp": datetime.now().isoformat() + "Z",
+            "player": self._serialize_player(player),
+            "world": self._serialize_world(world),
+            "enemies": (
+                enemy_manager.serialize()
+                if enemy_manager is not None and hasattr(enemy_manager, "serialize")
+                else None
+            ),
+            "pickups": (
+                pickup_manager.serialize()
+                if pickup_manager is not None and hasattr(pickup_manager, "serialize")
+                else []
+            ),
+            "game_stats": (
+                game_stats.to_dict()
+                if game_stats is not None and hasattr(game_stats, "to_dict")
+                else (game_stats if isinstance(game_stats, dict) else {})
+            ),
+            "inventory": {
+                "items": [],  # зарезервировано под будущий инвентарь
+                "gold": getattr(player, "coins", 0) if player else 0,
+            },
+        }
+
+        # Папка должна существовать (для произвольных filepath)
+        parent = os.path.dirname(filepath)
+        if parent and not os.path.exists(parent):
+            os.makedirs(parent)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(save_data, f, indent=2, ensure_ascii=False)
+
+        print(f"Игра сохранена: {os.path.basename(filepath)}")
+        return True
 
     # --- Загрузка ----------------------------------------------------------
 
@@ -324,3 +334,150 @@ class SaveSystem:
         """Проверка существования файла быстрого сохранения."""
         filepath = os.path.join(self.saves_dir, self.quicksave_file)
         return os.path.exists(filepath)
+
+    # --- Manual-слоты (v0.3.2) --------------------------------------------
+
+    def _slot_filepath(self, slot_id: int) -> str:
+        """Полный путь к файлу slot_id (1..MANUAL_SLOT_LIMIT)."""
+        return os.path.join(
+            self.manual_dir, self._SLOT_FILENAME_FMT.format(int(slot_id))
+        )
+
+    def slot_exists(self, slot_id: int) -> bool:
+        return os.path.exists(self._slot_filepath(slot_id))
+
+    def save_to_slot(self, slot_id: int, player, world, game_stats=None,
+                     pickup_manager=None, enemy_manager=None) -> bool:
+        """Сохранить игру в ручной слот ``slot_id`` (1..10).
+
+        Перезаписывает слот без подтверждения — подтверждение должно
+        делаться на уровне UI.
+        """
+        if not (1 <= int(slot_id) <= self.MANUAL_SLOT_LIMIT):
+            print(
+                f"Ошибка: slot_id {slot_id} вне диапазона "
+                f"1..{self.MANUAL_SLOT_LIMIT}"
+            )
+            return False
+        try:
+            return self._write_save(
+                self._slot_filepath(slot_id),
+                player, world, game_stats, pickup_manager, enemy_manager,
+            )
+        except Exception as e:
+            print(f"Ошибка сохранения в слот {slot_id}: {e}")
+            return False
+
+    def load_from_slot(self, slot_id: int):
+        """Загрузить save_data из manual-слота. None при ошибке."""
+        filepath = self._slot_filepath(slot_id)
+        if not os.path.exists(filepath):
+            print(f"Слот {slot_id} пуст")
+            return None
+        return self._load_from_path(filepath)
+
+    def delete_slot(self, slot_id: int) -> bool:
+        """Удалить файл manual-слота."""
+        filepath = self._slot_filepath(slot_id)
+        if not os.path.exists(filepath):
+            return False
+        try:
+            os.remove(filepath)
+            print(f"Слот {slot_id} удалён")
+            return True
+        except OSError as e:
+            print(f"Ошибка удаления слота {slot_id}: {e}")
+            return False
+
+    def list_manual_saves(self):
+        """Список метаданных всех заполненных manual-слотов.
+
+        Возвращает list[dict] вида::
+
+            {"slot_id": 1, "timestamp": "...", "level": 3,
+             "play_time": 124.5, "hp": 80, "max_hp": 100, "filename": "slot_01.json"}
+
+        Пустые слоты в список не попадают. Сортировка по slot_id ASC.
+        """
+        result = []
+        for slot_id in range(1, self.MANUAL_SLOT_LIMIT + 1):
+            filepath = self._slot_filepath(slot_id)
+            if not os.path.exists(filepath):
+                continue
+            meta = self._read_metadata(filepath)
+            meta["slot_id"] = slot_id
+            meta["filename"] = os.path.basename(filepath)
+            result.append(meta)
+        return result
+
+    def get_quicksave_metadata(self):
+        """Метаданные quicksave (или None если quicksave нет)."""
+        filepath = os.path.join(self.saves_dir, self.quicksave_file)
+        if not os.path.exists(filepath):
+            return None
+        meta = self._read_metadata(filepath)
+        meta["filename"] = self.quicksave_file
+        return meta
+
+    def get_free_slot(self):
+        """Первый свободный slot_id (1..10) или None если все заняты."""
+        for slot_id in range(1, self.MANUAL_SLOT_LIMIT + 1):
+            if not self.slot_exists(slot_id):
+                return slot_id
+        return None
+
+    def _load_from_path(self, filepath: str):
+        """Прочитать и провалидировать save_data из произвольного пути."""
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                save_data = json.load(f)
+            try:
+                self._validate_save_data(save_data)
+            except SaveValidationError as ve:
+                print(f"Сохранение повреждено: {ve}")
+                return None
+            version = save_data.get("version")
+            if version not in self.SUPPORTED_VERSIONS:
+                print(
+                    f"Предупреждение: версия сохранения {version} "
+                    f"не поддерживается ({sorted(self.SUPPORTED_VERSIONS)})."
+                )
+            print(f"Игра загружена: {os.path.basename(filepath)}")
+            return save_data
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Ошибка загрузки (повреждённый файл): {e}")
+            return None
+        except Exception as e:
+            print(f"Ошибка загрузки: {e}")
+            return None
+
+    def _read_metadata(self, filepath: str) -> dict:
+        """Прочитать только метаданные сейва (без полного применения).
+
+        Возвращает dict с ключами: timestamp, level, play_time, hp, max_hp,
+        valid (bool). Не кидает исключения — повреждённые файлы получают
+        valid=False и плейсхолдеры.
+        """
+        meta = {
+            "timestamp": "",
+            "level": 0,
+            "play_time": 0.0,
+            "hp": 0,
+            "max_hp": 0,
+            "valid": False,
+        }
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            meta["timestamp"] = data.get("timestamp", "") or ""
+            player = data.get("player") or {}
+            meta["level"] = int(player.get("level", 0) or 0)
+            meta["hp"] = int(player.get("health", 0) or 0)
+            meta["max_hp"] = int(player.get("max_health", 0) or 0)
+            stats = data.get("game_stats") or {}
+            meta["play_time"] = float(stats.get("play_time", 0.0) or 0.0)
+            meta["valid"] = True
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            # Повреждённый файл — отдаём плейсхолдер с valid=False
+            pass
+        return meta

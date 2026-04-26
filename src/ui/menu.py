@@ -15,14 +15,19 @@ class MainMenu:
         self.update_menu_items()
     
     def has_saves(self):
-        """Проверяет наличие файлов сохранений"""
+        """Проверяет наличие любых сохранений (quicksave или manual-слотов)."""
         saves_dir = "saves"
         if not os.path.exists(saves_dir):
             return False
-        
-        # Проверяем наличие любых .json файлов в папке saves
-        save_files = [f for f in os.listdir(saves_dir) if f.endswith('.json')]
-        return len(save_files) > 0
+        # Quicksave / любые .json в корне
+        if any(f.endswith('.json') for f in os.listdir(saves_dir)):
+            return True
+        # Manual-слоты в saves/manual/
+        manual_dir = os.path.join(saves_dir, "manual")
+        if os.path.isdir(manual_dir):
+            if any(f.endswith('.json') for f in os.listdir(manual_dir)):
+                return True
+        return False
     
     def has_quicksave(self):
         """Проверяет наличие quicksave файла"""
