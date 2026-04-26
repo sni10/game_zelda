@@ -85,8 +85,8 @@ class HUD:
         """Уровень игрока слева от HP-бара."""
         text = f"Lv.{player.level}"
         surf = self._font_level.render(text, True, (200, 200, 255))
-        # Справа от HP текста
-        screen.blit(surf, (220 + 50, 12))
+        # Справа от HP текста (с запасом)
+        screen.blit(surf, (310, 12))
 
     def _draw_weapon_slots(self, screen: pygame.Surface, player) -> None:
         """Слоты оружий с подсветкой активного — под полоской здоровья."""
