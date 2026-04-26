@@ -1,294 +1,361 @@
+"""
+Game - основной класс игрового цикла.
+
+Простая single-world игра в стиле Zelda. Без мульти-миров, ECS,
+порталов и подземных Z-переходов - всё это было оверинжинирингом
+для текущего этапа разработки. При необходимости вернётся отдельной
+веткой когда базовые механики (комбат, враги, инвентарь) будут готовы.
+"""
 import pygame
 import sys
+import os
+
 from src.core.config_loader import load_config, get_config, get_color
 from src.core.game_states import GameState
 from src.core.game_stats import GameStats
 from src.ui.menu import MainMenu
 from src.ui.game_over import GameOverScreen
+from src.ui.hud import HUD
 from src.utils.debug import debug
+from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
 from src.world.world import World
 from src.systems.save_system import SaveSystem
+from src.systems.pickup_manager import PickupManager
+
+
+# Размер игрока (32x32) - используется для центрирования в стартовом тайле.
+# В будущем стоит вынести в config.ini.
+_PLAYER_HALF = 16
 
 
 class Game:
     def __init__(self):
+        self.logger = SessionLogger()
+
         # Загрузка конфигурации
         self.config = load_config()
-        
+
         # Инициализация Pygame
         pygame.init()
-        self.screen = pygame.display.set_mode((get_config('WIDTH'), get_config('HEIGHT')))
+        self.screen = pygame.display.set_mode(
+            (get_config('WIDTH'), get_config('HEIGHT'))
+        )
         pygame.display.set_caption("Zelda-like Game")
         self.clock = pygame.time.Clock()
         self.running = True
-        
+
         # Состояние игры
         self.state = GameState.MENU
-        
+
         # Главное меню
         self.menu = MainMenu()
-        
+
         # Игровые объекты (инициализируются при начале новой игры)
-        self.world = None
-        self.player = None
-        self.game_stats = None
-        self.game_over_screen = None
-        
-        # Переменные для отслеживания времени
+        self.world: World = None
+        self.player: Player = None
+        self.game_stats: GameStats = None
+        self.game_over_screen: GameOverScreen = None
+        self.hud: HUD = None
+        self.pickup_manager: PickupManager = None
+
+        # Тайминги игрового цикла
         self.last_time = pygame.time.get_ticks()
-        
+
         # Отладочная информация
         self.show_debug = False
-        
+
         # Система сохранений
         self.save_system = SaveSystem()
 
+    # --- Логирование -------------------------------------------------------
+
+    def log(self, message, level="INFO"):
+        """Прокси к SessionLogger (сохранён ради обратной совместимости вызовов self.log)."""
+        self.logger.log(message, level)
+
+    # --- Жизненный цикл игры ----------------------------------------------
+
     def start_new_game(self):
-        """Инициализация новой игры"""
-        # Создание игрового мира
-        self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
-        
-        # Создание игрока в стартовой позиции из карты
-        player_start_x, player_start_y = self.world.get_player_start_position()
-        self.player = Player(player_start_x, player_start_y)
-        
-        # Инициализация статистики игры
-        self.game_stats = GameStats()
-        
-        # Инициализация Game Over экрана
-        self.game_over_screen = GameOverScreen(
-            get_config('WIDTH'), 
-            get_config('HEIGHT'), 
-            self.game_stats
+        """Начать новую игру: создать мир, игрока, статистику."""
+        self.log("=== ЗАПУСК НОВОЙ ИГРЫ ===", "IMPORTANT")
+
+        # Загружаем основной (и единственный) мир
+        self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+        start_x, start_y = self.world.get_player_start_position()
+        self.log(f"Стартовая позиция (центр тайла @): ({start_x}, {start_y})")
+
+        # PickupManager — система дропа/сбора пикапов
+        self.pickup_manager = PickupManager()
+        self.world.enemy_manager.pickup_manager = self.pickup_manager
+
+        # Игрок спавнится центрированно в тайле, чтобы не пересекать
+        # соседние клетки и не застревать у стенок.
+        self.player = Player(start_x - _PLAYER_HALF, start_y - _PLAYER_HALF)
+        self.log(
+            f"Игрок создан: HP={self.player.health}/{self.player.max_health}, "
+            f"оружие='{self.player.current_weapon.name}'"
         )
-        
-        # Переход в игровое состояние
+
+        # Спавн врагов вне зоны видимости игрока
+        spawned = self.world.enemy_manager.spawn_initial(
+            self.player.x, self.player.y
+        )
+        self.log(f"Заспавнено врагов: {spawned} "
+                 f"(по типам: {self.world.enemy_manager.alive_by_type()})",
+                 "IMPORTANT")
+
+        # Статистика и Game Over экран
+        self.game_stats = GameStats()
+        self.game_over_screen = GameOverScreen(
+            get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
+        )
+        self.hud = HUD()
+
+        print("Игра запущена. WASD/стрелки - движение, Space - атака, "
+              "1..4 - оружие, F1 - debug, F5/F9 - save/load, ESC - меню")
         self.state = GameState.PLAYING
 
+    # --- Обработка событий -------------------------------------------------
+
     def handle_events(self):
-        """Обработка событий"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            elif event.type == pygame.KEYDOWN:
-                if self.state == GameState.MENU:
-                    # Обработка событий в меню
-                    action = self.menu.handle_input(event)
-                    if action == "new_game":
-                        self.start_new_game()
-                    elif action == "continue_game":
-                        # Загрузка quicksave
-                        self.quickload()
-                    elif action == "load_game":
-                        # TODO: Реализовать диалог выбора сохранений при реализации Issue #16
-                        print("Загрузить игру - функция будет реализована в Issue #16")
-                        # Пока что запускаем новую игру
-                        self.start_new_game()
-                    elif action == "exit":
-                        self.running = False
-                elif self.state == GameState.PLAYING:
-                    # Обработка событий в игре
-                    if event.key == pygame.K_F1:
-                        self.show_debug = not self.show_debug
-                    elif event.key == pygame.K_F5:
-                        # Быстрое сохранение
-                        self.quicksave()
-                    elif event.key == pygame.K_F9:
-                        # Быстрая загрузка
-                        self.quickload()
-                    elif event.key == pygame.K_ESCAPE:
-                        self.state = GameState.MENU
-                elif self.state == GameState.GAME_OVER:
-                    # Обработка событий на экране Game Over
-                    if self.game_over_screen:
-                        action = self.game_over_screen.handle_input(event)
-                        if action == "MENU":
-                            self.state = GameState.MENU
-                        elif action == "QUIT":
-                            self.running = False
+                continue
+
+            if event.type != pygame.KEYDOWN:
+                continue
+
+            if self.state == GameState.MENU:
+                self._handle_menu_key(event)
+            elif self.state == GameState.PLAYING:
+                self._handle_playing_key(event)
+            elif self.state == GameState.GAME_OVER:
+                self._handle_game_over_key(event)
+
+    def _handle_menu_key(self, event):
+        action = self.menu.handle_input(event)
+        if action == "new_game":
+            self.start_new_game()
+        elif action == "continue_game":
+            self.quickload()
+        elif action == "load_game":
+            print("Load game - функция будет реализована позже")
+            self.start_new_game()
+        elif action == "exit":
+            self.running = False
+
+    def _handle_playing_key(self, event):
+        if event.key == pygame.K_F1:
+            self.show_debug = not self.show_debug
+        elif event.key == pygame.K_F5:
+            self.quicksave()
+        elif event.key == pygame.K_F9:
+            self.quickload()
+        elif event.key == pygame.K_ESCAPE:
+            self.state = GameState.MENU
+        # Выбор оружия по 1..5 (соответствует Player.weapons)
+        elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3,
+                           pygame.K_4, pygame.K_5):
+            if self.player:
+                idx = event.key - pygame.K_1
+                if self.player.switch_weapon(idx):
+                    w = self.player.current_weapon
+                    self.log(
+                        f"🗡️ [{idx + 1}] Оружие: {w.name} "
+                        f"(reach={w.reach}, dmg={w.damage})",
+                        "IMPORTANT",
+                    )
+
+    def _handle_game_over_key(self, event):
+        if not self.game_over_screen:
+            return
+        action = self.game_over_screen.handle_input(event)
+        if action == "MENU":
+            self.state = GameState.MENU
+        elif action == "QUIT":
+            self.running = False
+
+    # --- Обновление --------------------------------------------------------
 
     def update(self, dt):
-        """Обновление игровой логики"""
-        if self.state == GameState.PLAYING and self.player and self.world:
-            # Проверка смерти игрока
-            if self.player.is_dead():
-                self.game_stats.record_death()
-                self.state = GameState.GAME_OVER
-                return
-            
-            # Получение состояния клавиш
-            keys = pygame.key.get_pressed()
-            
-            # Обработка ввода игрока
-            self.player.handle_input(keys)
-            
-            # Обновление игрока (коллизии теперь проверяются внутри player.update)
-            self.player.update(dt, self.world, self.game_stats)
-            
-            # Обновление статистики
-            if self.game_stats:
-                self.game_stats.update_position(self.player.x, self.player.y)
-            
-            # Обновление камеры
-            self.world.update_camera(
-                self.player.x + self.player.width // 2,
-                self.player.y + self.player.height // 2,
-                get_config('WIDTH'), get_config('HEIGHT')
+        if self.state != GameState.PLAYING or not self.player or not self.world:
+            return
+
+        # Смерть игрока
+        if self.player.is_dead():
+            self.game_stats.record_death()
+            self.state = GameState.GAME_OVER
+            return
+
+        keys = pygame.key.get_pressed()
+        self.player.handle_input(keys)
+        self.player.update(dt, self.world, self.game_stats)
+
+        # Враги патрулируют свои зоны + авто-респавн при удалении игрока
+        self.world.enemy_manager.update(
+            dt, self.player.x, self.player.y, player=self.player
+        )
+
+        # Если игрок атакует - применяем урон врагам.
+        # apply_player_attack использует attack_id, чтобы 1 атака
+        # = 1 урон каждому затронутому врагу (даже если зона держится
+        # 200-400мс на нём).
+        if self.player.attacking:
+            weapon = self.player.current_weapon
+            hits, kills = self.world.enemy_manager.apply_player_attack(
+                self.player.attack_id,
+                self.player.get_attack_rects(),
+                weapon.damage + self.player.damage_bonus,
+                player=self.player,
             )
+            if kills > 0 and self.game_stats:
+                for _ in range(kills):
+                    self.game_stats.record_enemy_kill(weapon.damage)
+            elif hits > 0 and self.game_stats:
+                self.game_stats.record_attack(weapon.damage * hits)
+
+        if self.game_stats:
+            self.game_stats.update_position(self.player.x, self.player.y)
+
+        # Контактный урон от врагов (враг касается игрока = дамаг)
+        self.world.enemy_manager.apply_contact_damage(self.player)
+
+        # Обновление пикапов (магнит + сбор)
+        if self.pickup_manager:
+            self.pickup_manager.update(dt, self.player)
+
+        # Камера следует за игроком
+        self.world.update_camera(
+            self.player.x + self.player.width // 2,
+            self.player.y + self.player.height // 2,
+            get_config('WIDTH'), get_config('HEIGHT'),
+        )
+
+    # --- Отрисовка ---------------------------------------------------------
 
     def draw(self):
-        """Отрисовка игры"""
         if self.state == GameState.MENU:
-            # Отрисовка меню
             self.menu.draw(self.screen)
+
         elif self.state == GameState.PLAYING and self.player and self.world:
-            # Очистка экрана
             self.screen.fill(get_color('BLACK'))
-            
-            # Отрисовка мира
+            # 1) Земля + миникарта
             self.world.draw(self.screen, self.player.x, self.player.y)
-            
-            # Отрисовка игрока
+            # 2) Пикапы поверх земли (но под врагами)
+            if self.pickup_manager:
+                self.pickup_manager.draw(
+                    self.screen, self.world.camera_x, self.world.camera_y
+                )
+            # 3) Враги поверх земли (но под игроком)
+            self.world.enemy_manager.draw(
+                self.screen, self.world.camera_x, self.world.camera_y
+            )
+            # 4) Игрок поверх врагов
             self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
-            
-            # Отрисовка UI (полоска здоровья)
-            self.draw_health_bar()
-            
-            # Отладочная информация
+            # 5) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
+            self.world.draw_overlay(self.screen, self.player.rect)
+            # 6) HUD
+            if self.hud:
+                self.hud.draw(self.screen, self.player)
+
             if self.show_debug:
-                debug_info = [
-                    f"Player: ({int(self.player.x)}, {int(self.player.y)})",
-                    f"Camera: ({int(self.world.camera_x)}, {int(self.world.camera_y)})",
-                    f"Direction: {self.player.facing_direction}",
-                    f"Attacking: {self.player.attacking}",
-                    f"FPS: {int(self.clock.get_fps())}",
-                    "Controls: WASD/Arrows - Move, Space - Attack, F1 - Debug, ESC - Menu"
-                ]
-                
-                y_offset = 10
-                for info in debug_info:
-                    debug(info, y=y_offset)
-                    y_offset += 20
+                self._draw_debug_info()
             else:
-                # Показываем базовые инструкции
-                debug("Press F1 for debug info, ESC for menu", y=get_config('HEIGHT') - 30)
-        elif self.state == GameState.GAME_OVER:
-            # Отрисовка экрана Game Over
-            if self.game_over_screen:
-                self.game_over_screen.draw(self.screen)
-        
-        # Обновление дисплея
+                debug(
+                    "WASD - Move | Shift - Sprint | Space - Attack | 1..4 - Weapon | "
+                    "F1 - Debug | F5/F9 - Save/Load | ESC - Menu",
+                    y=get_config('HEIGHT') - 30,
+                )
+
+        elif self.state == GameState.GAME_OVER and self.game_over_screen:
+            self.game_over_screen.draw(self.screen)
+
         pygame.display.flip()
 
-    def draw_health_bar(self):
-        """Отрисовка полоски здоровья игрока"""
-        # Параметры полоски здоровья
-        bar_width = 200
-        bar_height = 20
-        bar_x = 10
-        bar_y = 10
-        border_width = 2
-        
-        # Вычисляем процент здоровья
-        health_percentage = self.player.health / self.player.max_health
-        health_bar_width = int(bar_width * health_percentage)
-        
-        # Рисуем фон полоски (темно-серый)
-        pygame.draw.rect(self.screen, get_color('DARK_GRAY'), 
-                        (bar_x, bar_y, bar_width, bar_height))
-        
-        # Рисуем полоску здоровья (зеленый)
-        if health_bar_width > 0:
-            pygame.draw.rect(self.screen, get_color('GREEN'), 
-                            (bar_x, bar_y, health_bar_width, bar_height))
-        
-        # Рисуем тонкую рамочку
-        pygame.draw.rect(self.screen, get_color('WHITE'), 
-                        (bar_x - border_width, bar_y - border_width, 
-                         bar_width + border_width * 2, bar_height + border_width * 2), 
-                        border_width)
-        
-        # Добавляем текст с числовым значением здоровья
-        font = pygame.font.Font(None, 24)
-        health_text = f"{int(self.player.health)}/{int(self.player.max_health)}"
-        text_surface = font.render(health_text, True, get_color('WHITE'))
-        text_x = bar_x + bar_width + 10
-        text_y = bar_y + (bar_height - text_surface.get_height()) // 2
-        self.screen.blit(text_surface, (text_x, text_y))
+    def _draw_debug_info(self):
+        info = [
+            f"Player: ({int(self.player.x)}, {int(self.player.y)})",
+            f"HP: {self.player.health}/{self.player.max_health}"
+            f" | Lv.{self.player.level}"
+            f" | XP: {self.player.xp}/{self.player.stats.xp_to_next_level}"
+            f" | Coins: {self.player.coins}",
+            f"Direction: {self.player.facing_direction}",
+            f"Sprint: {self.player.is_sprinting} (x{self.player.sprint_multiplier})",
+            f"Weapon: {self.player.current_weapon.name} (dmg={self.player.current_weapon.damage}+{self.player.damage_bonus})",
+            f"Attacking: {self.player.attacking} (id={self.player.attack_id})",
+            f"Enemies alive: {self.world.enemy_manager.alive_count()} "
+            f"({self.world.enemy_manager.alive_by_type()})",
+            f"Pickups: {self.pickup_manager.count() if self.pickup_manager else 0}",
+            f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
+            f"FPS: {int(self.clock.get_fps())}",
+            "Controls: WASD - Move, Shift - Sprint, Space - Attack, 1..4 - Weapon",
+            "F1 - Debug, F5 - Save, F9 - Load, ESC - Menu",
+        ]
+        y = 10
+        for line in info:
+            debug(line, y=y)
+            y += 20
+
+    # --- Сохранения --------------------------------------------------------
 
     def quicksave(self):
-        """Быстрое сохранение игры (F5)"""
         if self.player and self.world:
-            success = self.save_system.save_game(self.player, self.world)
-            if success:
-                # Показываем уведомление об успешном сохранении
-                print("Игра сохранена! (F5)")
-            else:
-                print("Ошибка сохранения!")
+            ok = self.save_system.save_game(self.player, self.world)
+            print("Игра сохранена! (F5)" if ok else "Ошибка сохранения!")
         else:
             print("Нет активной игры для сохранения!")
 
     def quickload(self):
-        """Быстрая загрузка игры (F9)"""
+        print("\n💾 [F9] Попытка быстрой загрузки...")
         if not self.save_system.quicksave_exists():
-            print("Файл быстрого сохранения не найден!")
+            print("   ❌ Файл сохранения не найден")
             return
-        
+
         save_data = self.save_system.load_game()
-        if save_data:
-            # Если игра не запущена, создаем новый мир и игрока
-            if not self.player or not self.world:
-                self.world = World(width=get_config('WORLD_WIDTH'), height=get_config('WORLD_HEIGHT'))
-                # Создаем игрока с временными координатами
-                self.player = Player(0, 0)
-            
-            # Инициализация статистики игры (если еще не создана)
-            if not self.game_stats:
-                self.game_stats = GameStats()
-            
-            # Инициализация Game Over экрана (если еще не создан)
-            if not self.game_over_screen:
-                self.game_over_screen = GameOverScreen(
-                    get_config('WIDTH'), 
-                    get_config('HEIGHT'), 
-                    self.game_stats
-                )
-            
-            # Применяем загруженные данные
-            self.save_system.apply_save_data_to_player(self.player, save_data)
-            self.save_system.apply_save_data_to_world(self.world, save_data)
-            
-            # Переходим в игровое состояние
-            self.state = GameState.PLAYING
-            print("Игра загружена! (F9)")
-        else:
-            print("Ошибка загрузки!")
+        if not save_data:
+            print("   ❌ Ошибка - данные повреждены")
+            return
+
+        # Создаём мир/игрока, если игра ещё не запущена
+        if not self.player or not self.world:
+            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.player = Player(0, 0)
+        if not self.pickup_manager:
+            self.pickup_manager = PickupManager()
+            self.world.enemy_manager.pickup_manager = self.pickup_manager
+        if not self.game_stats:
+            self.game_stats = GameStats()
+        if not self.game_over_screen:
+            self.game_over_screen = GameOverScreen(
+                get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
+            )
+        if not self.hud:
+            self.hud = HUD()
+
+        self.save_system.apply_save_data_to_player(self.player, save_data)
+        self.save_system.apply_save_data_to_world(self.world, save_data)
+        self.state = GameState.PLAYING
+        print("   ✅ Игра загружена! (F9)")
+
+    # --- Главный цикл ------------------------------------------------------
 
     def run(self):
-        """Основной игровой цикл"""
         while self.running:
-            # Вычисление времени кадра
             current_time = pygame.time.get_ticks()
-            dt = (current_time - self.last_time) / 1000.0  # Конвертация в секунды
+            dt = (current_time - self.last_time) / 1000.0
             self.last_time = current_time
-            
-            # Ограничение dt для стабильности
-            dt = min(dt, 1.0 / 30.0)  # Максимум 30 FPS для физики
-            
-            # Обработка событий
+            dt = min(dt, 1.0 / 30.0)  # capping для физической стабильности
+
             self.handle_events()
-            
-            # Обновление игры
             self.update(dt)
-            
-            # Отрисовка
             self.draw()
-            
-            # Ограничение FPS
+
             self.clock.tick(get_config('FPS'))
-        
-        # Завершение работы
+
+        self.log("=== СЕССИЯ ЗАВЕРШЕНА ===", "IMPORTANT")
+        self.logger.close()
         pygame.quit()
         sys.exit()
 

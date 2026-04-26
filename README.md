@@ -1,5 +1,8 @@
 # Zelda-like Game
 
+[![English](https://img.shields.io/badge/lang-en-red.svg)](README.md)
+[![Русский](https://img.shields.io/badge/lang-ru-blue.svg)](README_RU.md)
+
 [![Release](https://img.shields.io/github/v/release/sni10/game_zelda?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sni10/game_zelda/releases)
 [![Tests](https://img.shields.io/github/actions/workflow/status/sni10/game_zelda/python-tests.yml?style=for-the-badge&logo=github-actions&logoColor=white&label=Tests)](https://github.com/sni10/game_zelda/actions/workflows/python-tests.yml)
 [![Coverage](https://img.shields.io/badge/Coverage-73%25-brightgreen?style=for-the-badge&logo=python&logoColor=white)](https://github.com/sni10/game_zelda)
@@ -7,74 +10,139 @@
 [![Pygame](https://img.shields.io/badge/Pygame-2.6+-green?style=for-the-badge&logo=python&logoColor=white)](https://pygame.org)
 [![License](https://img.shields.io/github/license/sni10/game_zelda?style=for-the-badge&color=blue)](LICENSE)
 
-Базовая реализация игры в стиле классической 2D Zelda с использованием Python и Pygame.
+A base implementation of a 2D Zelda-style game using Python and Pygame.
 
-## Особенности
+## Features
 
-### ✅ Реализованные функции
-- **Персонаж**: Движение в 8 направлениях (включая диагонали) с правильной нормализацией скорости
-- **Управление**: WASD или стрелки для движения, пробел для атаки
-- **Атака**: Система атаки с кулдауном и визуальной индикацией направления
-- **Большой мир**: Игровая карта 2000x2000 пикселей с препятствиями
-- **Камера**: Плавное следование за игроком с ограничениями по границам мира
-- **Коллизии**: Система столкновений с препятствиями
-- **Мини-карта**: Отображение позиции игрока и области видимости
-- **Отладка**: F1 для включения/выключения отладочной информации
+### ✅ Implemented Functions
 
-### 🎮 Управление
-- **WASD** или **Стрелки** - движение в 8 направлениях
-- **Пробел** - атака в направлении взгляда
-- **F1** - включить/выключить отладочную информацию
-- **ESC** - выход из игры
+#### 🎮 Game Systems
+- **Main Menu**: Full-featured menu with navigation and dynamic options.
+- **State System**: MENU, PLAYING, GAME_OVER with smooth transitions.
+- **Game Over Screen**: Informative death screen with statistics.
 
-### 🏗️ Архитектура
-Проект следует принципам ООП, SOLID и DRY с модульной структурой:
+#### 👤 Character and Health
+- **Movement**: 8-way movement (including diagonals) with proper speed normalization.
+- **Health System**: 100 HP with a visual health bar.
+- **Player Death**: Automatic transition to Game Over at 0 HP.
+- **Attack**: Attack system with cooldown and visual direction indication.
+
+#### 🌍 World and Terrain
+- **Large World**: 2000x2000 pixel game map.
+- **Terrain System**: 6 types of terrain with different properties.
+- **Terrain Damage**: Swamps and sands deal damage to the player.
+- **Speed Modification**: Certain terrain types slow down movement.
+- **Map Loading**: Support for ASCII maps from files.
+
+#### 💾 Saves and Statistics
+- **Quick Saves**: F5 for saving, F9 for loading.
+- **JSON Format**: Structured saves with versioning.
+- **Game Statistics**: Play time, damage, items collected, distance traveled.
+- **Automatic Tracking**: All actions are recorded in statistics.
+
+#### 🖥️ Interface
+- **Camera**: Smoothly follows the player with world boundary constraints.
+- **Collisions**: Collision system with obstacles and terrain.
+- **Mini-map**: Displays player position and visibility area.
+- **Debug**: F1 to toggle debug information.
+
+### 🎮 Controls
+
+#### In Menu:
+- **Up/Down Arrows** - Navigate menu items.
+- **Enter** - Select menu item.
+- **ESC** - Exit game.
+
+#### In Game:
+- **WASD** or **Arrows** - Movement in 8 directions.
+- **Space** - Attack in the looking direction.
+- **F1** - Toggle debug information.
+- **F5** - Quick save.
+- **F9** - Quick load.
+- **ESC** - Return to main menu.
+
+#### On Game Over Screen:
+- **WASD/Arrows** - Navigate options.
+- **Enter/Space** - Select option.
+
+### 🏗️ Architecture
+The project follows OOP, SOLID, and DRY principles with a modular structure:
 
 ```
 game_zelda/
 ├── README.md
-├── main.py                    # Точка входа в приложение
-├── src/                       # Исходный код
-│   ├── core/                  # Основные системы игры
-│   │   ├── game.py           # Главный класс Game с игровым циклом
-│   │   └── settings.py       # Настройки и константы
-│   ├── entities/             # Игровые сущности
-│   │   ├── player.py         # Класс Player с движением и атакой
-│   │   ├── enemy.py          # Классы врагов
-│   │   ├── item.py           # Классы предметов
-│   │   └── npc.py            # Классы NPC
-│   ├── world/                # Мир и окружение
-│   │   └── world.py          # Класс World с картой и камерой
-│   ├── systems/              # Игровые системы
-│   │   └── (будущие системы)
-│   └── utils/                # Утилиты
-│       └── debug.py          # Отладочные функции
-├── assets/                   # Ресурсы игры
-│   ├── images/
-│   ├── sounds/
-│   └── fonts/
-└── tests/                    # Тесты
+├── main.py                    # Entry point
+├── config.ini                # Configuration file
+├── src/                       # Source code
+│   ├── core/                  # Core game systems
+│   │   ├── game.py           # Main Game class with game loop
+│   │   ├── config_loader.py  # Config loading system
+│   │   ├── game_states.py    # Game state enum
+│   │   └── game_stats.py     # Statistics tracking system
+│   ├── entities/             # Game entities
+│   │   ├── player.py         # Player class with movement, attack, and health
+│   │   ├── enemy.py          # Enemy classes
+│   │   ├── item.py           # Item classes
+│   │   └── npc.py            # NPC classes
+│   ├── world/                # World and environment
+│   │   ├── world.py          # World class with map and camera
+│   │   └── terrain.py        # Terrain and damage system
+│   ├── ui/                   # User interface
+│   │   ├── menu.py           # Main menu
+│   │   └── game_over.py      # Game Over screen
+│   ├── systems/              # Game systems
+│   │   └── save_system.py    # Save/load system
+│   └── utils/                # Utilities
+│       └── debug.py          # Debug functions
+├── data/                     # Game data
+│   ├── main_world.txt        # ASCII map of the main world
+│   ├── cave_world.txt        # ASCII map of the cave world
+│   └── underground_world.txt # ASCII map of the underground world
+├── saves/                    # Saves folder
+│   └── quicksave.json        # Quick save file
+├── docs/                     # Documentation
+│   ├── release-notes/        # Release notes
+│   ├── game-structure-map.md # Game structure map
+│   └── implementation-plan.md # Implementation plan
+└── tests/                    # Tests
+    ├── unit/                 # Unit tests
+    └── config/               # Configuration tests
 ```
 
-### 🎨 Визуальные элементы
-Вместо текстур используются простые геометрические фигуры:
-- **Игрок**: Зеленый прямоугольник (красный во время атаки)
-- **Препятствия**: Коричневые блоки (серые для границ мира)
-- **Фон**: Темно-зеленый с сеткой для ориентации
-- **Атака**: Желтая область в направлении взгляда
+### 🎨 Visual Elements
+Simple geometric shapes are used instead of textures:
 
-## 🌿 Стратегия ветвления
+#### Player and Interface
+- **Player**: Green rectangle (red during attack).
+- **Looking Direction**: White dot on the player.
+- **Attack**: Yellow area in the looking direction.
+- **Health Bar**: Red-green gradient at the top of the screen.
 
-Game Zelda следует рабочему процессу **GitFlow**:
+#### Terrain
+- **Void**: Dark green background.
+- **Mountains**: Dark gray blocks (impassable).
+- **Water**: Blue blocks (impassable).
+- **Trees**: Dark green blocks (decorative).
+- **Swamps**: Brown-green blocks (damage).
+- **Sands**: Sand-colored blocks (damage + slowdown).
 
-- **`main`** – готовый к продакшену код
-- **`stage`** – предпродакшн 
-- **`dev`** – интеграционная ветка для новых фич
-- **`feature/*`** – новая функциональность на основе dev
-- **`release/*`** – подготовка релиза на основе stage
-- **`hotfix/*`** – срочные исправления на основе main
+#### Interface
+- **Mini-map**: Top right corner with player and obstacle dots.
+- **Menu**: Stylized with yellow highlighting and arrows.
+- **Game Over**: Semi-transparent overlay with a red header.
 
-### Workflow процесс:
+## 🌿 Branching Strategy
+
+Game Zelda follows the **GitFlow** workflow:
+
+- **`main`** – production-ready code.
+- **`stage`** – pre-production.
+- **`dev`** – integration branch for new features.
+- **`feature/*`** – new functionality based on dev.
+- **`release/*`** – release preparation based on stage.
+- **`hotfix/*`** – urgent fixes based on main.
+
+### Workflow process:
 ```
 feature/*   -> dev
 dev         -> stage
@@ -83,80 +151,80 @@ release/*   -> main + dev
 hotfix/*    -> main + dev
 ```
 
-### Рабочий процесс разработки:
-1. 🔧 **Разрабатываем фичи** в ветках `feature/*`
-2. 🔄 **Мержим в `dev`** для интеграции
-3. 📤 **Из `dev` мержим в `stage`** для тестирования
-4. 📸 **Из `stage` снимаем снапшот-релиз** в ветки `release/*`
-5. 🚀 **Релиз с фичами** мержим в `main`, `dev` и `stage`
+### Development Process:
+1. 🔧 **Develop features** in `feature/*` branches.
+2. 🔄 **Merge to `dev`** for integration.
+3. 📤 **Merge from `dev` to `stage`** for testing.
+4. 📸 **Take a snapshot release** from `stage` to `release/*` branches.
+5. 🚀 **Release with features** merged into `main`, `dev`, and `stage`.
 
-## 🔖 Версионирование
+## 🔖 Versioning
 
-Релизы создаются автоматически при пуше в `stage`. Рабочий процесс анализирует коммиты и увеличивает мажорную, минорную или патч версию соответственно, тегируя репозиторий `vX.Y.Z` и генерируя заметки о релизе.
+Releases are created automatically upon pushing to `stage`. The workflow analyzes commits and increments the major, minor, or patch version accordingly, tagging the repository `vX.Y.Z` and generating release notes.
 
-### Семантическое версионирование:
-- **MAJOR** (X.0.0) - кардинальные изменения, несовместимые с предыдущими версиями
-- **MINOR** (0.X.0) - новая функциональность, совместимая с предыдущими версиями
-- **PATCH** (0.0.X) - исправления багов, совместимые с предыдущими версиями
+### Semantic Versioning:
+- **MAJOR** (X.0.0) - breaking changes.
+- **MINOR** (0.X.0) - new functionality, backward compatible.
+- **PATCH** (0.0.X) - bug fixes, backward compatible.
 
-## Запуск игры
+## Running the Game
 
 ```bash
-cd F:\Code\game_zelda
 python main.py
 ```
 
-Основная точка входа теперь находится в корне проекта для удобства запуска.
+The main entry point is located in the project root for convenience.
 
-## Технические характеристики
+## Technical Specifications
 
-- **Размер окна**: 1024x768 пикселей
-- **Размер мира**: 2000x2000 пикселей
-- **FPS**: 60 кадров в секунду
-- **Скорость игрока**: 120 пикселей в секунду (как в классической Zelda)
-- **Размер тайлов**: 32x32 пикселя
+- **Window Size**: 1024x768 pixels.
+- **World Size**: 2000x2000 pixels.
+- **FPS**: 60 frames per second.
+- **Player Speed**: 120 pixels per second (as in classic Zelda).
+- **Tile Size**: 32x32 pixels.
 
-## Будущие расширения
+## Future Extensions
 
-Архитектура подготовлена для добавления:
-- **Враги** (класс Enemy)
-- **Предметы и инвентарь** (класс Item)
-- **NPC и диалоги** (класс NPC)
-- **Звуковые эффекты и музыка**
-- **Системы сохранения/загрузки**
-- **Дополнительные уровни и локации**
-- **Магия и заклинания**
+The architecture is prepared for adding:
+- **Enemies** (Enemy class)
+- **Items and Inventory** (Item class)
+- **NPCs and Dialogues** (NPC class)
+- **Sound Effects and Music**
+- **Save/Load Systems**
+- **Additional Levels and Locations**
+- **Magic and Spells**
 
-## Требования
+## Requirements
 
 - Python 3.7+
 - Pygame 2.0+
 
-## Установка зависимостей
+## Dependency Installation
 
 ```bash
 pip install pygame
 ```
 
-## 📚 Документация
+## 📚 Documentation
 
 ### 📋 Release Notes
-Все заметки о релизах доступны в папке документации:
-- [Release Notes v0.0.1](docs/release-notes/release_notes_v0.0.1.md) - Первый релиз игры
-- [Release Notes v0.1.1](docs/release-notes/release_notes_v0.1.1.md) - Исправления тестов и CI/CD
+All release notes are available in the documentation folder:
+- [Release Notes v0.0.1](docs/release-notes/release_notes_v0.0.1.md) - First release.
+- [Release Notes v0.1.1](docs/release-notes/release_notes_v0.1.1.md) - Test fixes and CI/CD.
+- [Release Notes v0.2.1](docs/release-notes/release_notes_v0.2.1.md) - Comprehensive update of game systems.
 
 ---
 
-### 🔧 Объяснение всех трех workflow файлов
+### 🔧 Workflow Files Explanation
 
-## 1. 🧪 **python-tests.yml** - Тестирование кода
+## 1. 🧪 **python-tests.yml** - Code Testing
 
-### Что делает:
-- **Запускает Python тесты** при каждом push или PR в ветки `main`, `dev`, `stage`
-- **Проверяет качество кода** перед мержем изменений
-- **Генерирует отчеты покрытия** тестами
+### What it does:
+- **Runs Python tests** on every push or PR to `main`, `dev`, `stage` branches.
+- **Checks code quality** before merging changes.
+- **Generates coverage reports**.
 
-### Когда срабатывает:
+### Triggers:
 ```yaml
 on:
   push:
@@ -165,129 +233,111 @@ on:
     branches: [ main, dev, stage ]
 ```
 
-### Что происходит:
-1. ✅ **Checkout кода** - скачивает код из репозитория
-2. ✅ **Установка Python 3.10** - настраивает окружение
-3. ✅ **Установка зависимостей** - `pip install -r requirements.txt`
-4. ✅ **Запуск тестов** - `pytest` с покрытием кода
-5. ✅ **Загрузка отчетов** - отправляет результаты в Codecov
+### Process:
+1. ✅ **Code Checkout** - downloads code from repository.
+2. ✅ **Set up Python 3.10** - configures the environment.
+3. ✅ **Install dependencies** - `pip install -r requirements.txt`.
+4. ✅ **Run tests** - `pytest` with code coverage.
+5. ✅ **Upload reports** - sends results to Codecov.
 
-**Цель:** Убедиться, что код работает правильно перед мержем
+**Goal:** Ensure code works correctly before merging.
 
 ---
 
-## 2. 🔄 **auto-sync-branches.yml** - Автоматическая синхронизация веток
+## 2. 🔄 **auto-sync-branches.yml** - Automatic Branch Synchronization
 
-### Что делает:
-- **Автоматически создает PR** для синхронизации веток по GitFlow
-- **Поддерживает правильный поток**: `dev → stage → main`
-- **Создает sync ветки** для безопасного мержа
+### What it does:
+- **Automatically creates PRs** for branch synchronization following GitFlow.
+- **Maintains the correct flow**: `dev → stage → main`.
+- **Creates sync branches** for safe merging.
 
-### Когда срабатывает:
+### Triggers:
 ```yaml
 on:
   push:
-    branches: [dev, stage]  # При пуше в dev или stage
+    branches: [dev, stage]
 ```
 
-### Логика работы:
+### Logic:
 
-#### При пуше в **dev**:
-1. ✅ Проверяет, есть ли новые коммиты в `dev` по сравнению с `stage`
-2. ✅ Создает ветку `auto-sync/dev-to-stage-YYYYMMDD-HHMMSS`
-3. ✅ Создает PR: **dev → stage**
+#### On push to **dev**:
+1. ✅ Checks for new commits in `dev` compared to `stage`.
+2. ✅ Creates branch `auto-sync/dev-to-stage-YYYYMMDD-HHMMSS`.
+3. ✅ Creates PR: **dev → stage**.
 
-#### При пуше в **stage**:
-1. ✅ Проверяет, есть ли новые коммиты в `stage` по сравнению с `main`
-2. ✅ Создает ветку `auto-sync/stage-to-main-YYYYMMDD-HHMMSS`
-3. ✅ Создает PR: **stage → main**
+#### On push to **stage**:
+1. ✅ Checks for new commits in `stage` compared to `main`.
+2. ✅ Creates branch `auto-sync/stage-to-main-YYYYMMDD-HHMMSS`.
+3. ✅ Creates PR: **stage → main**.
 
-### Что в PR:
-- 📋 **Заголовок**: "🔄 Auto-sync dev → stage" или "🔄 Auto-sync stage → main"
-- 📋 **Описание**: Список изменений (до 10 коммитов)
-- 📋 **Автоматическое создание**: Без ручного вмешательства
+### In PR:
+- 📋 **Title**: "🔄 Auto-sync dev → stage" or "🔄 Auto-sync stage → main".
+- 📋 **Description**: List of changes (up to 10 commits).
+- 📋 **Automatic creation**: No manual intervention required.
 
-**Цель:** Автоматизировать GitFlow процесс разработки
+**Goal:** Automate the GitFlow development process.
 
 ---
 
-## 3. 🏷️ **versioning.yml** - Автоматическое создание релизов
+## 3. 🏷️ **versioning.yml** - Automatic Release Creation
 
-### Что делает:
-- **Автоматически создает новые версии** при мерже в `main`
-- **Генерирует changelog** с описанием изменений
-- **Создает Git теги и GitHub релизы**
-- **Использует семантическое версионирование** (major.minor.patch)
+### What it does:
+- **Automatically creates new versions** upon merging to `main`.
+- **Generates changelog** describing the changes.
+- **Creates Git tags and GitHub releases**.
+- **Uses Semantic Versioning** (major.minor.patch).
 
-### Когда срабатывает:
+### Triggers:
 ```yaml
 on:
   push:
-    branches: [main]  # Только при пуше в main
-  workflow_dispatch:  # Или ручной запуск
+    branches: [main]
+  workflow_dispatch:
 ```
 
-### Логика версионирования:
+### Versioning Logic:
 
-#### Автоматическое определение типа версии:
-- 🔴 **Major** (3.0.0): Если есть коммиты с "BREAKING CHANGE"
-- 🟡 **Minor** (0.1.0): Если есть коммиты с "feat:"
-- 🟢 **Patch** (0.0.1): Все остальные изменения
+#### Automatic version type detection:
+- 🔴 **Major** (3.0.0): If "BREAKING CHANGE" is in commits.
+- 🟡 **Minor** (0.1.0): If "feat:" is in commits.
+- 🟢 **Patch** (0.0.1): All other changes.
 
-#### Что создается:
-1. ✅ **Новый тег**: `v0.1.0`, `v0.2.0`, etc.
-2. ✅ **GitHub Release** с описанием:
-    - 📊 Статистика (количество коммитов, контрибьюторов)
-    - 📋 Changelog (список изменений)
-    - 🔗 Ссылки на diff и коммиты
-3. ✅ **Автоматический push тега** в репозиторий
+#### Created artifacts:
+1. ✅ **New tag**: `v0.1.0`, `v0.2.0`, etc.
+2. ✅ **GitHub Release** with description:
+    - 📊 Statistics (commit count, contributors).
+    - 📋 Changelog (list of changes).
+    - 🔗 Links to diff and commits.
+3. ✅ **Automatic tag push** to repository.
 
-### Пример релиза:
-```
-## Changes in v0.1.0
-
-### Statistics
-- Commits: 5
-- Contributors: 1
-- Type: minor
-
-### Changelog
-- feat: add new feature (abc123)
-- fix: resolve bug (def456)
-
-### Links
-- Full diff: v0.0.1...v0.1.0
-- Commit: sha123
-```
-
-**Цель:** Автоматизировать процесс релизов и ведение changelog
+**Goal:** Automate the release process and changelog maintenance.
 
 ---
 
-## 🔄 Как все работает вместе:
+## 🔄 How everything works together:
 
-### Полный цикл разработки:
+### Full Development Cycle:
 
-1. **Разработка фичи** → Push в `dev`
-    - ✅ `python-tests.yml` проверяет код
-    - ✅ `auto-sync-branches.yml` создает PR `dev → stage`
+1. **Feature Development** → Push to `dev`.
+    - ✅ `python-tests.yml` checks the code.
+    - ✅ `auto-sync-branches.yml` creates PR `dev → stage`.
 
-2. **Тестирование** → Мерж PR в `stage`
-    - ✅ `python-tests.yml` проверяет код
-    - ✅ `auto-sync-branches.yml` создает PR `stage → main`
+2. **Testing** → Merge PR to `stage`.
+    - ✅ `python-tests.yml` checks the code.
+    - ✅ `auto-sync-branches.yml` creates PR `stage → main`.
 
-3. **Релиз** → Мерж PR в `main`
-    - ✅ `python-tests.yml` проверяет код
-    - ✅ `versioning.yml` создает новый релиз
+3. **Release** → Merge PR to `main`.
+    - ✅ `python-tests.yml` checks the code.
+    - ✅ `versioning.yml` creates a new release.
 
-### 🎯 Результат:
-- ✅ **Качественный код** (тесты на каждом этапе)
-- ✅ **Автоматизированный GitFlow** (dev → stage → main)
-- ✅ **Автоматические релизы** с changelog
-- ✅ **Минимум ручной работы** (только аппрув PR)
+### 🎯 Result:
+- ✅ **High-quality code** (tests at every stage).
+- ✅ **Automated GitFlow** (dev → stage → main).
+- ✅ **Automatic releases** with changelog.
+- ✅ **Minimal manual work** (only PR approval).
 
-**Все три workflow работают синхронно для обеспечения качественного и автоматизированного процесса разработки!** 🚀
+**All three workflows work synchronously to ensure a high-quality and automated development process!** 🚀
 
 ---
 
-**Создано с использованием принципов ООП, SOLID и DRY для масштабируемости и расширяемости.**
+**Built using OOP, SOLID, and DRY principles for scalability and extensibility.**

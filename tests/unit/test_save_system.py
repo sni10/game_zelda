@@ -31,7 +31,8 @@ def test_save_system():
     
     # Create test objects
     print("1. Creating test player and world...")
-    world = World(width=2000, height=2000)
+    world = World(map_file=os.path.join('data', 'main_world.txt'),
+                  width=2000, height=2000)
     player_start_x, player_start_y = world.get_player_start_position()
     player = Player(player_start_x, player_start_y)
     
@@ -79,8 +80,9 @@ def test_save_system():
     
     # Create new player and world to test loading
     new_player = Player(0, 0)  # Different initial position
-    new_world = World(width=2000, height=2000)
-    
+    new_world = World(map_file=os.path.join('data', 'main_world.txt'),
+                      width=2000, height=2000)
+
     print(f"   New player initial state: pos=({new_player.x}, {new_player.y}), health={new_player.health}, facing={new_player.facing_direction}")
     
     # Apply save data
