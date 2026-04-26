@@ -240,37 +240,51 @@ class Game:
                     elif event.key == pygame.K_ESCAPE:
                         self.state = GameState.MENU
                     
-                    # Новые клавиши для системы множественных миров
+                    # Новые клавиши для системы множественных миров.
+                    # ВНИМАНИЕ: смена миров перенесена с 1/2/3 на F2/F3/F4,
+                    # чтобы освободить цифры под выбор оружия (1..N).
                     elif event.key == pygame.K_e:
                         self.log("⚡ [E] Z-переход", "IMPORTANT")
                         self.handle_z_transition()
                     elif event.key == pygame.K_p:
                         self.log("🌀 [P] Активация портала", "IMPORTANT")
                         self.handle_portal_activation()
-                    elif event.key == pygame.K_1:
-                        self.log("🌍 [1] -> Основной мир", "IMPORTANT")
+                    elif event.key == pygame.K_F2:
+                        self.log("🌍 [F2] -> Основной мир", "IMPORTANT")
                         success = self.world_manager.switch_to_world("main_world", self.player_entity)
                         if success:
                             self.world = self._get_or_create_legacy_world("main_world")
                             self.sync_player_position()
                         else:
                             self.log("❌ Ошибка переключения на основной мир!", "ERROR")
-                    elif event.key == pygame.K_2:
-                        self.log("🕳️ [2] -> Мир-пещера", "IMPORTANT")
+                    elif event.key == pygame.K_F3:
+                        self.log("🕳️ [F3] -> Мир-пещера", "IMPORTANT")
                         success = self.world_manager.switch_to_world("cave_world", self.player_entity)
                         if success:
                             self.world = self._get_or_create_legacy_world("cave_world")
                             self.sync_player_position()
                         else:
                             self.log("❌ Ошибка переключения на мир-пещеру!", "ERROR")
-                    elif event.key == pygame.K_3:
-                        self.log("⛏️ [3] -> Подземный мир", "IMPORTANT")
+                    elif event.key == pygame.K_F4:
+                        self.log("⛏️ [F4] -> Подземный мир", "IMPORTANT")
                         success = self.world_manager.switch_to_world("underground_world", self.player_entity)
                         if success:
                             self.world = self._get_or_create_legacy_world("underground_world")
                             self.sync_player_position()
                         else:
                             self.log("❌ Ошибка переключения на подземный мир!", "ERROR")
+
+                    # Выбор оружия по цифровым клавишам 1..N (соответствуют
+                    # порядку Player.weapons из default_loadout()).
+                    elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3,
+                                       pygame.K_4, pygame.K_5):
+                        if self.player:
+                            digit = event.key - pygame.K_1  # K_1 -> 0
+                            if self.player.switch_weapon(digit):
+                                w = self.player.current_weapon
+                                self.log(f"🗡️ [{digit + 1}] Оружие: {w.name} "
+                                         f"(reach={w.reach}, dmg={w.damage})",
+                                         "IMPORTANT")
                 elif self.state == GameState.GAME_OVER:
                     # Обработка событий на экране Game Over
                     if self.game_over_screen:
@@ -480,7 +494,8 @@ class Game:
             
             # Отрисовка UI (полоска здоровья)
             self.draw_health_bar()
-            
+            self.draw_weapon_hud()
+
             # Отладочная информация
             if self.show_debug:
                 current_world = self.world_manager.get_current_world()
@@ -497,7 +512,7 @@ class Game:
                     f"FPS: {int(self.clock.get_fps())}",
                     f"Worlds: {world_stats['total_worlds']} total, {world_stats['loaded_worlds']} loaded",
                     "Controls: WASD - Move, Space - Attack, E - Z-transition, P - Portal",
-                    "1,2,3 - Switch worlds, F1 - Debug, ESC - Menu"
+                    "1..4 - Weapon, F2/F3/F4 - Switch worlds, F1 - Debug, ESC - Menu"
                 ]
                 
                 y_offset = 10
@@ -513,7 +528,7 @@ class Game:
                 
                 debug(f"World: {world_name} | Z-Level: {z_level} | F1 - Debug | ESC - Menu", 
                       y=get_config('HEIGHT') - 50)
-                debug("E - Z-transition | P - Portal | 1,2,3 - Switch worlds", 
+                debug("E - Z-transition | P - Portal | F2/F3/F4 - Switch worlds | 1..4 - Weapon",
                       y=get_config('HEIGHT') - 30)
         elif self.state == GameState.GAME_OVER:
             # Отрисовка экрана Game Over
@@ -558,6 +573,49 @@ class Game:
         text_x = bar_x + bar_width + 10
         text_y = bar_y + (bar_height - text_surface.get_height()) // 2
         self.screen.blit(text_surface, (text_x, text_y))
+
+    def draw_weapon_hud(self):
+        """HUD оружий - под полоской здоровья.
+
+        Отображает все слоты оружия (квадратики цвета оружия), цифру
+        для переключения и подсвечивает активное оружие белой рамкой.
+        Под HUD - имя текущего оружия.
+        """
+        if not self.player:
+            return
+
+        slot_size = 36
+        gap = 6
+        start_x = 10
+        start_y = 40  # под health bar (он на y=10, высотой 20 + рамка)
+
+        font_digit = pygame.font.Font(None, 20)
+        font_name = pygame.font.Font(None, 22)
+
+        for i, weapon in enumerate(self.player.weapons):
+            slot_x = start_x + i * (slot_size + gap)
+            slot_rect = pygame.Rect(slot_x, start_y, slot_size, slot_size)
+
+            # Фон слота - тёмно-серый
+            pygame.draw.rect(self.screen, get_color('DARK_GRAY'), slot_rect)
+            # Заливка цветом оружия (приглушённая)
+            inner = slot_rect.inflate(-8, -8)
+            pygame.draw.rect(self.screen, weapon.color, inner)
+
+            # Рамка: белая толстая для активного, тёмная для остальных
+            is_active = (i == self.player.current_weapon_index)
+            border_color = get_color('WHITE') if is_active else (60, 60, 60)
+            border_width = 3 if is_active else 1
+            pygame.draw.rect(self.screen, border_color, slot_rect, border_width)
+
+            # Цифра в углу слота
+            digit_surf = font_digit.render(str(i + 1), True, get_color('WHITE'))
+            self.screen.blit(digit_surf, (slot_x + 3, start_y + 2))
+
+        # Имя активного оружия под слотами
+        active = self.player.current_weapon
+        name_surf = font_name.render(active.name, True, get_color('WHITE'))
+        self.screen.blit(name_surf, (start_x, start_y + slot_size + 4))
 
     def quicksave(self):
         """Быстрое сохранение игры (F5)"""

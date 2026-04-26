@@ -1,6 +1,7 @@
 import pygame
 import math
 from src.core.config_loader import get_config, get_color
+from src.entities.weapons import Weapon, default_loadout
 
 
 class Player:
@@ -25,16 +26,38 @@ class Player:
         self.last_damage_time = 0
         self.damage_cooldown = 1000  # миллисекунды между уроном от окружения
         
-        # Система атаки
+        # Система атаки. Параметры конкретной атаки берутся из активного оружия,
+        # а здесь храним только runtime-состояние ("атакует прямо сейчас").
         self.attacking = False
-        self.attack_duration = 300  # миллисекунды
-        self.attack_timer = 0
-        self.attack_cooldown = 100  # миллисекунды между атаками
-        self.last_attack_time = 0
-        
+        self.attack_timer = 0          # время старта текущей атаки (ticks)
+        self.last_attack_time = 0      # для cooldown между атаками
+
+        # Инвентарь оружий и активное оружие
+        self.weapons = default_loadout()
+        self.current_weapon_index = 0
+
         # Прямоугольник для коллизий
         self.rect = pygame.Rect(x, y, self.width, self.height)
-        
+
+    @property
+    def current_weapon(self) -> Weapon:
+        """Текущее активное оружие."""
+        return self.weapons[self.current_weapon_index]
+
+    def switch_weapon(self, index: int) -> bool:
+        """Переключить оружие по индексу (0..N-1).
+
+        Возвращает True если переключение произошло.
+        Если игрок в процессе атаки - переключение отклоняется.
+        """
+        if self.attacking:
+            return False
+        if 0 <= index < len(self.weapons):
+            if index != self.current_weapon_index:
+                self.current_weapon_index = index
+                return True
+        return False
+
     def handle_input(self, keys):
         """Обработка ввода с клавиатуры"""
         # Сброс направления
@@ -81,19 +104,20 @@ class Player:
             self.try_attack()
     
     def try_attack(self):
-        """Попытка атаки"""
+        """Попытка атаки с учётом cooldown текущего оружия."""
         current_time = pygame.time.get_ticks()
-        if not self.attacking and current_time - self.last_attack_time > self.attack_cooldown:
+        weapon = self.current_weapon
+        if not self.attacking and current_time - self.last_attack_time > weapon.cooldown_ms:
             self.attacking = True
             self.attack_timer = current_time
             self.last_attack_time = current_time
-    
+
     def update(self, dt, world, game_stats=None):
         """Обновление состояния игрока"""
-        # Обновление атаки
+        # Обновление атаки - длительность зависит от оружия
         if self.attacking:
             current_time = pygame.time.get_ticks()
-            if current_time - self.attack_timer > self.attack_duration:
+            if current_time - self.attack_timer > self.current_weapon.duration_ms:
                 self.attacking = False
         
         # Движение
@@ -130,49 +154,28 @@ class Player:
                         self.take_damage(new_tile.damage_amount, game_stats)
                         self.last_damage_time = current_time
     
-    def get_attack_rect(self):
-        """Получить прямоугольник атаки"""
+    def get_attack_rects(self):
+        """Получить ВСЕ прямоугольники зон поражения текущей атаки.
+
+        Делегирует расчёт активному оружию. Реализация в weapons.py
+        использует симметричную формулу _rect_in_direction(), поэтому
+        зоны атаки одинаково расположены во всех 8 направлениях
+        (в отличие от старой версии, где down/right были впритык,
+        а up/left имели зазор).
+        """
         if not self.attacking:
-            return None
-            
-        attack_range = 40
-        attack_width = 30
-        attack_height = 30
-        
-        if self.facing_direction == 'up':
-            return pygame.Rect(self.rect.centerx - attack_width//2, 
-                             self.rect.top - attack_range, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'down':
-            return pygame.Rect(self.rect.centerx - attack_width//2, 
-                             self.rect.bottom, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'left':
-            return pygame.Rect(self.rect.left - attack_range, 
-                             self.rect.centery - attack_height//2, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'right':
-            return pygame.Rect(self.rect.right, 
-                             self.rect.centery - attack_height//2, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'up_left':
-            return pygame.Rect(self.rect.left - attack_range//2, 
-                             self.rect.top - attack_range//2, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'up_right':
-            return pygame.Rect(self.rect.right - attack_width//2, 
-                             self.rect.top - attack_range//2, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'down_left':
-            return pygame.Rect(self.rect.left - attack_range//2, 
-                             self.rect.bottom - attack_height//2, 
-                             attack_width, attack_height)
-        elif self.facing_direction == 'down_right':
-            return pygame.Rect(self.rect.right - attack_width//2, 
-                             self.rect.bottom - attack_height//2, 
-                             attack_width, attack_height)
-        return None
-    
+            return []
+        return self.current_weapon.get_attack_rects(self.rect, self.facing_direction)
+
+    def get_attack_rect(self):
+        """Совместимость: вернуть первую зону атаки или None.
+
+        Старый код использовал именно одну зону. Для AOE/ranged лучше
+        использовать get_attack_rects() (мн.ч.).
+        """
+        rects = self.get_attack_rects()
+        return rects[0] if rects else None
+
     def draw(self, screen, camera_x=0, camera_y=0):
         """Отрисовка игрока"""
         # Позиция на экране с учетом камеры
@@ -206,18 +209,19 @@ class Player:
         elif self.facing_direction == 'down_right':
             pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, screen_y + self.height - 5), 3)
         
-        # Рисуем зону атаки
+        # Рисуем зоны атаки текущего оружия (их может быть несколько -
+        # например, "трасса стрелы" из 3 клеток для лука).
         if self.attacking:
-            attack_rect = self.get_attack_rect()
-            if attack_rect:
+            weapon = self.current_weapon
+            for attack_rect in self.get_attack_rects():
                 attack_screen_rect = pygame.Rect(
                     attack_rect.x - camera_x,
                     attack_rect.y - camera_y,
                     attack_rect.width,
                     attack_rect.height
                 )
-                pygame.draw.rect(screen, (255, 255, 0, 128), attack_screen_rect, 2)
-    
+                pygame.draw.rect(screen, weapon.color, attack_screen_rect, 2)
+
     def is_dead(self):
         """Проверка, мертв ли игрок"""
         return self.health <= 0
