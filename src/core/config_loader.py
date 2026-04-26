@@ -68,6 +68,8 @@ class ConfigLoader:
                 # Player settings
                 'PLAYER_SPEED': parser.getint('player', 'player_speed'),
                 'PLAYER_SIZE': parser.getint('player', 'player_size'),
+                'PLAYER_MAX_HEALTH': parser.getint('player', 'player_max_health')
+                    if parser.has_option('player', 'player_max_health') else 1000,
                 # Sprint - опциональный (default = 1.8 если не задан в config)
                 'PLAYER_SPRINT_MULTIPLIER': (
                     parser.getfloat('player', 'player_sprint_multiplier')

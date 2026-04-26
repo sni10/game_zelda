@@ -210,6 +210,36 @@ class EnemyManager:
 
         return (hits, kills)
 
+    # --- Контактный урон врагов → игроку -----------------------------------
+
+    def apply_contact_damage(self, player) -> int:
+        """Проверить пересечение живых врагов с игроком и нанести контактный урон.
+
+        Урон берётся из enemy.stats.damage. Каждый кадр каждый пересекающийся
+        враг наносит урон (но player.damage_cooldown ограничивает частоту
+        получения урона от окружения - по аналогии с болотом/песком).
+
+        Возвращает суммарный нанесённый урон за этот кадр.
+        """
+        total_damage = 0
+        current_time = pygame.time.get_ticks()
+
+        # Проверяем cooldown на стороне игрока (чтобы не дамажило каждый кадр)
+        if current_time - player.last_damage_time < player.damage_cooldown:
+            return 0
+
+        for enemy in self.enemies:
+            if enemy.is_dead():
+                continue
+            if enemy.rect.colliderect(player.rect):
+                dmg = enemy.stats.damage
+                player.take_damage(dmg)
+                player.last_damage_time = current_time
+                total_damage += dmg
+                break  # один кадр = один удар (первый враг в списке)
+
+        return total_damage
+
     # --- Отрисовка ---------------------------------------------------------
 
     def draw(self, screen: pygame.Surface, camera_x: float, camera_y: float) -> None:

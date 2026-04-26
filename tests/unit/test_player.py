@@ -5,6 +5,7 @@ import pytest
 import pygame
 import os
 from unittest.mock import patch, MagicMock
+from src.core.config_loader import get_config
 from src.entities.player import Player
 from src.world.terrain import TerrainTile, TerrainType
 
@@ -234,8 +235,8 @@ class TestPlayer:
 
     def test_player_health_initialization(self):
         """Test player health system initialization"""
-        assert self.player.health == 100
-        assert self.player.max_health == 100
+        assert self.player.health == get_config('PLAYER_MAX_HEALTH')
+        assert self.player.max_health == get_config('PLAYER_MAX_HEALTH')
         assert self.player.damage_cooldown == 1000
         assert self.player.last_damage_time == 0
 
@@ -447,17 +448,17 @@ class TestPlayer:
 
     def test_player_heal_method(self):
         """Test heal method"""
-        self.player.health = 50  # Reduce health
-        
+        max_hp = self.player.max_health
+        self.player.health = max_hp - 50  # Reduce health by 50
+
         # Heal player
-        heal_amount = 20
-        self.player.heal(heal_amount)
-        assert self.player.health == 70
-        
+        self.player.heal(20)
+        assert self.player.health == max_hp - 30
+
         # Overheal should not exceed max_health
-        self.player.heal(50)
-        assert self.player.health == self.player.max_health
-        
+        self.player.heal(max_hp)
+        assert self.player.health == max_hp
+
         # Dead player should not heal
         self.player.health = 0
         self.player.heal(50)
@@ -465,17 +466,18 @@ class TestPlayer:
 
     def test_player_get_health_percentage(self):
         """Test get_health_percentage method"""
+        max_hp = self.player.max_health
         # Full health should return 1.0
         assert self.player.get_health_percentage() == 1.0
-        
+
         # Half health should return 0.5
-        self.player.health = 50
+        self.player.health = max_hp // 2
         assert self.player.get_health_percentage() == 0.5
-        
+
         # Zero health should return 0.0
         self.player.health = 0
         assert self.player.get_health_percentage() == 0.0
-        
+
         # Test edge case with zero max_health
         self.player.max_health = 0
         assert self.player.get_health_percentage() == 0.0

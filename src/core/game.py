@@ -231,6 +231,9 @@ class Game:
         if self.game_stats:
             self.game_stats.update_position(self.player.x, self.player.y)
 
+        # Контактный урон от врагов (враг касается игрока = дамаг)
+        self.world.enemy_manager.apply_contact_damage(self.player)
+
         # Камера следует за игроком
         self.world.update_camera(
             self.player.x + self.player.width // 2,
@@ -316,9 +319,10 @@ class Game:
              bar_width + border_width * 2, bar_height + border_width * 2),
             border_width,
         )
-        # Текст
+        # Текст — проценты вместо абсолютных HP (1000 HP = 100%)
         font = pygame.font.Font(None, 24)
-        text = f"{int(self.player.health)}/{int(self.player.max_health)}"
+        pct_display = int(round(pct * 100))
+        text = f"{pct_display}%"
         text_surf = font.render(text, True, get_color('WHITE'))
         self.screen.blit(
             text_surf,

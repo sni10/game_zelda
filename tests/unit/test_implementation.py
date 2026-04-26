@@ -5,6 +5,11 @@ Test script to verify all implemented mechanics work correctly
 import pygame
 import sys
 import os
+from src.core.config_loader import load_config, get_config
+
+os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+pygame.init()
+load_config()
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -20,13 +25,14 @@ def test_player_health_system():
     player = Player(100, 100)
     
     # Test initialization
-    assert player.health == 100
-    assert player.max_health == 100
+    max_hp = get_config('PLAYER_MAX_HEALTH')
+    assert player.health == max_hp
+    assert player.max_health == max_hp
     print("✓ Health system initialized correctly")
-    
+
     # Test damage
     player.health -= 10
-    assert player.health == 90
+    assert player.health == max_hp - 10
     print("✓ Health damage works")
     
     # Test minimum health

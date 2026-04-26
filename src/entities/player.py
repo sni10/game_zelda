@@ -25,7 +25,7 @@ class Player:
         self.facing_direction = 'down'  # направление взгляда для атаки (8 направлений)
         
         # Система здоровья
-        self.max_health = 100
+        self.max_health = get_config('PLAYER_MAX_HEALTH')
         self.health = self.max_health
         self.last_damage_time = 0
         self.damage_cooldown = 1000  # миллисекунды между уроном от окружения
