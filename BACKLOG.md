@@ -14,13 +14,13 @@
 
 ### 🔴 Сохранения работают наполовину
 **Где:** `src/systems/save_system.py`, `src/core/game.py`
-- [ ] Меню «Загрузить игру» — заглушка: `load_game` вызывает `start_new_game()` и затирает прогресс
-- [ ] Мёртвая строка `save_system.py:138` — артефакт после рефакторинга `Player → PlayerStats` (`player.stats._stats = player.stats`)
-- [ ] F9 не восстанавливает текущее оружие и `current_weapon_index`
-- [ ] F9 не восстанавливает живых врагов (они респавнятся заново)
-- [ ] F9 не восстанавливает лежащие на земле пикапы (монеты, аптечки, XP)
-- [ ] F9 не восстанавливает `GameStats` (kills/distance/playtime обнуляются)
-- [ ] Нет валидации схемы JSON при загрузке — порченный файл может крашнуть игру
+- [x] Меню «Загрузить игру» — теперь вызывает `quickload()` (вместо затирающего прогресс `start_new_game()`)
+- [x] Убрана мёртвая строка `save_system.py:138` (артефакт рефакторинга `Player → PlayerStats`)
+- [x] F9 восстанавливает `current_weapon_index` (и `iframe_timer`)
+- [x] F9 восстанавливает живых врагов (тип/HP/позиция/cooldown) через `EnemyManager.serialize/deserialize`
+- [x] F9 восстанавливает лежащие пикапы через `PickupManager.serialize/deserialize`
+- [x] F9 восстанавливает `GameStats` через `GameStats.to_dict/from_dict` (вкл. play_time)
+- [x] Валидация схемы JSON при загрузке (`SaveValidationError`) — порченный файл возвращает `None` без краша
 
 ### 🟡 Прочее
 - [ ] При смерти игрока статистика на Game Over screen иногда показывает дублирующиеся записи (требует воспроизведения)
@@ -45,13 +45,14 @@
 
 ## 💾 SAVE/LOAD SYSTEM — отдельный эпик
 
-### 🔴 v0.3.1 — фикс существующего F9
-1. Убрать мёртвую строку `save_system.py:138`
-2. Сериализовать: `current_weapon_index`, `iframe_timer` (опц.)
-3. `EnemyManager.serialize()` / `deserialize()` — сохранять живых врагов с HP/позицией
-4. `PickupManager.serialize()` / `deserialize()` — сохранять лежащие пикапы
-5. `GameStats.to_dict()` / `from_dict()` — полное восстановление статистики
-6. Тесты round-trip: `save → load → assert state equals`
+### ✅ v0.3.1 — фикс существующего F9 (сделано)
+1. [x] Убрана мёртвая строка `save_system.py:138`
+2. [x] Сериализация `current_weapon_index` и `iframe_timer`
+3. [x] `EnemyManager.serialize()` / `deserialize()` — живые враги с HP/позицией/cooldown + `target_counts`
+4. [x] `PickupManager.serialize()` / `deserialize()` — лежащие пикапы (тип/x/y/lifetime)
+5. [x] `GameStats.to_dict()` / `from_dict()` / `apply_dict()` — полное восстановление статистики (вкл. play_time)
+6. [x] Валидация JSON-схемы (`_validate_save_data` + `SaveValidationError`)
+7. [x] Round-trip тесты: `tests/unit/test_save_system_roundtrip.py` (8 тестов, вкл. legacy v1.0)
 
 ### 🟡 v0.3.2 — UI слотов
 1. `SaveSystem.list_saves()` — список с метаданными (timestamp, level, playtime, hp)
@@ -131,6 +132,6 @@
 
 ---
 
-**Последнее обновление:** 2026-04-26
-**Сопровождает:** `REFACTOR_PLAN.md` (выполненные шаги), `docs/release-notes/` (история релизов)
+**Последнее обновление:** 2026-04-27
+**Сопровождает:** `REFACTOR_PLAN.md` (выполненные шаги)
 
