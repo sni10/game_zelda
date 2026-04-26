@@ -1,11 +1,13 @@
 import pygame
 import os
+from typing import List
+
 from src.core.config_loader import get_config, get_color
-from src.world.terrain import load_map_from_file, TerrainType, TRANSLUCENT_OVERLAY_TYPES
+from src.world.terrain import TerrainType, TRANSLUCENT_OVERLAY_TYPES
+from src.world.map_loader import load_map_from_file
+from src.world.camera import Camera
 from src.systems.enemy_manager import EnemyManager
 
-
-from typing import List
 
 class World:
     def __init__(self, map_file: str, width=2000, height=2000):
@@ -27,8 +29,7 @@ class World:
         self.generate_obstacles_from_terrain()
 
         # Камера
-        self.camera_x = 0
-        self.camera_y = 0
+        self._camera = Camera()
 
         # Параметры эффекта прозрачности overlay (когда игрок под верхним слоем)
         self.overlay_alpha_under_player = 120   # альфа когда игрок под тайлом
@@ -38,6 +39,26 @@ class World:
         # Менеджер врагов. Враги хранятся внутри мира - удобно для save/load
         # и логически правильно (мир = всё что на нём).
         self.enemy_manager = EnemyManager(self)
+
+    # --- Камера (делегирует Camera) ----------------------------------------
+
+    @property
+    def camera_x(self) -> float:
+        return self._camera.x
+
+    @camera_x.setter
+    def camera_x(self, value: float):
+        self._camera.x = value
+
+    @property
+    def camera_y(self) -> float:
+        return self._camera.y
+
+    @camera_y.setter
+    def camera_y(self, value: float):
+        self._camera.y = value
+
+    # --- Генерация и запросы -----------------------------------------------
 
     def generate_obstacles_from_terrain(self):
         """Генерация препятствий из загруженной terrain карты"""
@@ -61,14 +82,9 @@ class World:
     
     def update_camera(self, player_x, player_y, screen_width, screen_height):
         """Обновление позиции камеры для следования за игроком"""
-        # Центрируем камеру на игроке
-        self.camera_x = player_x - screen_width // 2
-        self.camera_y = player_y - screen_height // 2
-        
-        # Ограничиваем камеру границами мира
-        self.camera_x = max(0, min(self.camera_x, self.width - screen_width))
-        self.camera_y = max(0, min(self.camera_y, self.height - screen_height))
-    
+        self._camera.follow(player_x, player_y, screen_width, screen_height,
+                            self.width, self.height)
+
     def check_collision(self, rect):
         """Проверка коллизии с препятствиями"""
         for obstacle in self.obstacles:

@@ -9,14 +9,15 @@ Game - основной класс игрового цикла.
 import pygame
 import sys
 import os
-import datetime
 
 from src.core.config_loader import load_config, get_config, get_color
 from src.core.game_states import GameState
 from src.core.game_stats import GameStats
 from src.ui.menu import MainMenu
 from src.ui.game_over import GameOverScreen
+from src.ui.hud import HUD
 from src.utils.debug import debug
+from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
 from src.world.world import World
 from src.systems.save_system import SaveSystem
@@ -29,7 +30,7 @@ _PLAYER_HALF = 16
 
 class Game:
     def __init__(self):
-        self._setup_logging()
+        self.logger = SessionLogger()
 
         # Загрузка конфигурации
         self.config = load_config()
@@ -54,6 +55,7 @@ class Game:
         self.player: Player = None
         self.game_stats: GameStats = None
         self.game_over_screen: GameOverScreen = None
+        self.hud: HUD = None
 
         # Тайминги игрового цикла
         self.last_time = pygame.time.get_ticks()
@@ -66,33 +68,9 @@ class Game:
 
     # --- Логирование -------------------------------------------------------
 
-    def _setup_logging(self):
-        """Настройка логирования каждой сессии в отдельный файл."""
-        log_dir = "logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_filename = os.path.join(log_dir, f"game_session_{timestamp}.log")
-
-        self.log_file = open(self.log_filename, 'w', encoding='utf-8')
-        self.log_file.write(
-            f"=== ИГРОВАЯ СЕССИЯ НАЧАЛАСЬ: "
-            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n\n"
-        )
-        self.log_file.flush()
-        print(f"📝 Логи записываются в: {self.log_filename}")
-
     def log(self, message, level="INFO"):
-        """Записать сообщение в лог. INFO в файл, важное также в консоль."""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        log_entry = f"[{timestamp}] [{level}] {message}\n"
-
-        self.log_file.write(log_entry)
-        self.log_file.flush()
-
-        if level in ("IMPORTANT", "ERROR", "WARNING"):
-            print(message)
+        """Прокси к SessionLogger (сохранён ради обратной совместимости вызовов self.log)."""
+        self.logger.log(message, level)
 
     # --- Жизненный цикл игры ----------------------------------------------
 
@@ -126,6 +104,7 @@ class Game:
         self.game_over_screen = GameOverScreen(
             get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
         )
+        self.hud = HUD()
 
         print("Игра запущена. WASD/стрелки - движение, Space - атака, "
               "1..4 - оружие, F1 - debug, F5/F9 - save/load, ESC - меню")
@@ -260,8 +239,8 @@ class Game:
             # 4) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
             self.world.draw_overlay(self.screen, self.player.rect)
             # 5) HUD
-            self.draw_health_bar()
-            self.draw_weapon_hud()
+            if self.hud:
+                self.hud.draw(self.screen, self.player)
 
             if self.show_debug:
                 self._draw_debug_info()
@@ -296,72 +275,6 @@ class Game:
             debug(line, y=y)
             y += 20
 
-    def draw_health_bar(self):
-        """Полоска здоровья игрока в верхнем-левом углу."""
-        bar_width, bar_height = 200, 20
-        bar_x, bar_y = 10, 10
-        border_width = 2
-
-        pct = self.player.health / self.player.max_health
-        health_w = int(bar_width * pct)
-
-        # Фон
-        pygame.draw.rect(self.screen, get_color('DARK_GRAY'),
-                         (bar_x, bar_y, bar_width, bar_height))
-        # Заливка
-        if health_w > 0:
-            pygame.draw.rect(self.screen, get_color('GREEN'),
-                             (bar_x, bar_y, health_w, bar_height))
-        # Рамка
-        pygame.draw.rect(
-            self.screen, get_color('WHITE'),
-            (bar_x - border_width, bar_y - border_width,
-             bar_width + border_width * 2, bar_height + border_width * 2),
-            border_width,
-        )
-        # Текст — проценты вместо абсолютных HP (1000 HP = 100%)
-        font = pygame.font.Font(None, 24)
-        pct_display = int(round(pct * 100))
-        text = f"{pct_display}%"
-        text_surf = font.render(text, True, get_color('WHITE'))
-        self.screen.blit(
-            text_surf,
-            (bar_x + bar_width + 10,
-             bar_y + (bar_height - text_surf.get_height()) // 2),
-        )
-
-    def draw_weapon_hud(self):
-        """Слоты оружий с подсветкой активного - под полоской здоровья."""
-        if not self.player:
-            return
-
-        slot_size, gap = 36, 6
-        start_x, start_y = 10, 40
-
-        font_digit = pygame.font.Font(None, 20)
-        font_name = pygame.font.Font(None, 22)
-
-        for i, weapon in enumerate(self.player.weapons):
-            slot_x = start_x + i * (slot_size + gap)
-            slot_rect = pygame.Rect(slot_x, start_y, slot_size, slot_size)
-
-            pygame.draw.rect(self.screen, get_color('DARK_GRAY'), slot_rect)
-            inner = slot_rect.inflate(-8, -8)
-            pygame.draw.rect(self.screen, weapon.color, inner)
-
-            is_active = (i == self.player.current_weapon_index)
-            border_color = get_color('WHITE') if is_active else (60, 60, 60)
-            border_w = 3 if is_active else 1
-            pygame.draw.rect(self.screen, border_color, slot_rect, border_w)
-
-            digit_surf = font_digit.render(str(i + 1), True, get_color('WHITE'))
-            self.screen.blit(digit_surf, (slot_x + 3, start_y + 2))
-
-        # Имя активного оружия под слотами
-        active = self.player.current_weapon
-        name_surf = font_name.render(active.name, True, get_color('WHITE'))
-        self.screen.blit(name_surf, (start_x, start_y + slot_size + 4))
-
     # --- Сохранения --------------------------------------------------------
 
     def quicksave(self):
@@ -392,6 +305,8 @@ class Game:
             self.game_over_screen = GameOverScreen(
                 get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
             )
+        if not self.hud:
+            self.hud = HUD()
 
         self.save_system.apply_save_data_to_player(self.player, save_data)
         self.save_system.apply_save_data_to_world(self.world, save_data)
@@ -414,7 +329,7 @@ class Game:
             self.clock.tick(get_config('FPS'))
 
         self.log("=== СЕССИЯ ЗАВЕРШЕНА ===", "IMPORTANT")
-        self.log_file.close()
+        self.logger.close()
         pygame.quit()
         sys.exit()
 
