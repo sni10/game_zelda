@@ -5,6 +5,11 @@ Test script to verify all implemented mechanics work correctly
 import pygame
 import sys
 import os
+from src.core.config_loader import load_config, get_config
+
+os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+pygame.init()
+load_config()
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -20,13 +25,14 @@ def test_player_health_system():
     player = Player(100, 100)
     
     # Test initialization
-    assert player.health == 100
-    assert player.max_health == 100
+    max_hp = get_config('PLAYER_MAX_HEALTH')
+    assert player.health == max_hp
+    assert player.max_health == max_hp
     print("✓ Health system initialized correctly")
-    
+
     # Test damage
     player.health -= 10
-    assert player.health == 90
+    assert player.health == max_hp - 10
     print("✓ Health damage works")
     
     # Test minimum health
@@ -75,25 +81,32 @@ def test_terrain_system():
     print("✓ Terrain damage and speed modification work")
 
 def test_world_loading():
-    """Test world loading system"""
+    """Test world map file loading.
+
+    Multi-world (cave/underground) был удалён как оверинжиниринг -
+    проверяем только наличие основной карты + опционального overlay.
+    """
     print("\nTesting world loading...")
-    
-    # Check if world_map.txt exists and is properly formatted
-    map_file = os.path.join('data', 'world_map.txt')
-    assert os.path.exists(map_file)
-    
-    with open(map_file, 'r', encoding='utf-8') as f:
+
+    main_map = os.path.join('data', 'main_world.txt')
+    assert os.path.exists(main_map), "main_world.txt not found"
+    with open(main_map, 'r', encoding='utf-8') as f:
         content = f.read()
-    
-    # Check that terrain symbol comments were removed
-    assert '# \'.\' - пустое пространство' not in content
-    assert '# \'#\' - горы' not in content
-    print("✓ Terrain symbol comments removed from world_map.txt")
-    
-    # Test world creation
-    world = World()
+    assert len(content.strip()) > 0, "main_world.txt is empty"
+    print("✓ World file main_world.txt exists and has content")
+
+    # Overlay-слой опционален, но если есть - тоже проверим что не пустой
+    overlay_map = os.path.join('data', 'main_world_overlay.txt')
+    if os.path.exists(overlay_map):
+        with open(overlay_map, 'r', encoding='utf-8') as f:
+            overlay_content = f.read()
+        assert len(overlay_content.strip()) > 0, "Overlay file is empty"
+        print("✓ Overlay file main_world_overlay.txt exists and has content")
+    # Test world creation with main_world.txt
+    main_world_file = os.path.join('data', 'main_world.txt')
+    world = World(map_file=main_world_file)
     assert len(world.terrain_tiles) > 0
-    print("✓ World loads terrain tiles correctly")
+    print("✓ World loads terrain tiles correctly from main_world.txt")
 
 def main():
     """Run all tests"""

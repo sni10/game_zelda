@@ -104,7 +104,11 @@ class SaveSystem:
             "y": int(player.y),
             "health": player.health,
             "max_health": player.max_health,
-            "facing_direction": player.facing_direction
+            "facing_direction": player.facing_direction,
+            "level": player.level,
+            "xp": player.xp,
+            "coins": player.coins,
+            "damage_bonus": player.damage_bonus,
         }
     
     def _serialize_world(self, world):
@@ -129,7 +133,15 @@ class SaveSystem:
             player.health = player_data["health"]
             player.max_health = player_data["max_health"]
             player.facing_direction = player_data["facing_direction"]
-            
+
+            # Прогрессия (backward compat — defaults для старых сейвов)
+            player.stats._stats = player.stats if hasattr(player, '_stats') else player.stats
+            stats = player.stats
+            stats.level = player_data.get("level", 1)
+            stats.xp = player_data.get("xp", 0)
+            stats.coins = player_data.get("coins", 0)
+            stats.damage_bonus = player_data.get("damage_bonus", 0)
+
             # Обновляем rect игрока
             player.rect.x = int(player.x)
             player.rect.y = int(player.y)

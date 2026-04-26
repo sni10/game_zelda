@@ -23,9 +23,14 @@ class TestWorld:
         pygame.quit()
         
     def setup_method(self):
-        """Set up test fixtures"""
-        self.world = World(width=1000, height=1000)
-        
+        """Set up test fixtures.
+
+        World требует map_file (обязательный параметр). Используем основную
+        карту проекта - она достаточно проста для всех проверок.
+        """
+        self.world = World(map_file=os.path.join('data', 'main_world.txt'),
+                           width=1000, height=1000)
+
     def test_world_initialization(self):
         """Test world initializes with correct values"""
         assert self.world.width == 1000
@@ -39,7 +44,7 @@ class TestWorld:
         
     def test_world_default_size(self):
         """Test world with default size"""
-        default_world = World()
+        default_world = World(map_file=os.path.join('data', 'main_world.txt'))
         assert default_world.width == 2000
         assert default_world.height == 2000
         
@@ -185,12 +190,13 @@ class TestWorld:
         
     def test_world_different_sizes(self):
         """Test world works with different sizes"""
-        small_world = World(width=500, height=500)
+        map_file = os.path.join('data', 'main_world.txt')
+        small_world = World(map_file=map_file, width=500, height=500)
         assert small_world.width == 500
         assert small_world.height == 500
         assert len(small_world.obstacles) > 0
-        
-        large_world = World(width=3000, height=3000)
+
+        large_world = World(map_file=map_file, width=3000, height=3000)
         assert large_world.width == 3000
         assert large_world.height == 3000
         assert len(large_world.obstacles) > 0

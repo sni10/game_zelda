@@ -1,32 +1,65 @@
 import pygame
 import os
+from typing import List
+
 from src.core.config_loader import get_config, get_color
-from src.world.terrain import load_map_from_file, TerrainType
+from src.world.terrain import TerrainType, TRANSLUCENT_OVERLAY_TYPES
+from src.world.map_loader import load_map_from_file
+from src.world.camera import Camera
+from src.systems.enemy_manager import EnemyManager
 
 
 class World:
-    def __init__(self, width=2000, height=2000):
+    def __init__(self, map_file: str, width=2000, height=2000):
         """Инициализация игрового мира"""
         self.width = width
         self.height = height
-        
+
         # Размер тайлов для сетки
         self.tile_size = 32
         self.tiles_x = width // self.tile_size
         self.tiles_y = height // self.tile_size
-        
-        # Загружаем карту из файла
-        map_file = os.path.join('data', 'world_map.txt')
-        self.terrain_tiles, self.player_start_x, self.player_start_y = load_map_from_file(map_file)
-        
+
+        # Загружаем карту из файла (земля + опциональный overlay)
+        self.terrain_tiles, self.overlay_tiles, self.player_start_x, self.player_start_y = \
+            load_map_from_file(map_file)
+
         # Создаем список препятствий для обратной совместимости
-        self.obstacles = []
+        self.obstacles: List[pygame.Rect] = []
         self.generate_obstacles_from_terrain()
-        
+
         # Камера
-        self.camera_x = 0
-        self.camera_y = 0
-        
+        self._camera = Camera()
+
+        # Параметры эффекта прозрачности overlay (когда игрок под верхним слоем)
+        self.overlay_alpha_under_player = 120   # альфа когда игрок под тайлом
+        self.overlay_alpha_normal = 255         # обычная альфа
+        self.player_rect_for_overlay: pygame.Rect = None  # устанавливается из draw()
+
+        # Менеджер врагов. Враги хранятся внутри мира - удобно для save/load
+        # и логически правильно (мир = всё что на нём).
+        self.enemy_manager = EnemyManager(self)
+
+    # --- Камера (делегирует Camera) ----------------------------------------
+
+    @property
+    def camera_x(self) -> float:
+        return self._camera.x
+
+    @camera_x.setter
+    def camera_x(self, value: float):
+        self._camera.x = value
+
+    @property
+    def camera_y(self) -> float:
+        return self._camera.y
+
+    @camera_y.setter
+    def camera_y(self, value: float):
+        self._camera.y = value
+
+    # --- Генерация и запросы -----------------------------------------------
+
     def generate_obstacles_from_terrain(self):
         """Генерация препятствий из загруженной terrain карты"""
         for tile in self.terrain_tiles:
@@ -49,14 +82,9 @@ class World:
     
     def update_camera(self, player_x, player_y, screen_width, screen_height):
         """Обновление позиции камеры для следования за игроком"""
-        # Центрируем камеру на игроке
-        self.camera_x = player_x - screen_width // 2
-        self.camera_y = player_y - screen_height // 2
-        
-        # Ограничиваем камеру границами мира
-        self.camera_x = max(0, min(self.camera_x, self.width - screen_width))
-        self.camera_y = max(0, min(self.camera_y, self.height - screen_height))
-    
+        self._camera.follow(player_x, player_y, screen_width, screen_height,
+                            self.width, self.height)
+
     def check_collision(self, rect):
         """Проверка коллизии с препятствиями"""
         for obstacle in self.obstacles:
@@ -105,7 +133,52 @@ class World:
         for tile in self.terrain_tiles:
             if camera_rect.colliderect(tile.rect):
                 tile.draw(screen, self.camera_x, self.camera_y)
-    
+
+    def draw_overlay(self, screen, player_rect: pygame.Rect = None):
+        """Отрисовка верхнего слоя (Z=2) поверх игрока.
+
+        Логика прозрачности зависит от ТИПА overlay-тайла:
+          - Тип в TRANSLUCENT_OVERLAY_TYPES (лавки, навесы, кроны деревьев)
+            и игрок ПОД тайлом - рисуем полупрозрачно, игрок виден сквозь
+            крышу (для интерактива с NPC, торговли и т.п.)
+          - Иначе - всегда плотно (HILL_SURFACE прячет игрока полностью,
+            не нужно рисовать внутренности холма).
+          - EMPTY на overlay - tile.draw() сам пропускает.
+
+        player_rect - в МИРОВЫХ координатах (не экранных).
+        """
+        if not self.overlay_tiles:
+            return
+
+        camera_rect = pygame.Rect(self.camera_x, self.camera_y,
+                                  screen.get_width(), screen.get_height())
+
+        for tile in self.overlay_tiles:
+            if not camera_rect.colliderect(tile.rect):
+                continue
+
+            # Прозрачность только для разрешённых типов И только когда
+            # игрок реально пересекает тайл
+            is_translucent_type = tile.terrain_type in TRANSLUCENT_OVERLAY_TYPES
+            player_under_tile = (
+                player_rect is not None
+                and tile.rect.colliderect(player_rect)
+            )
+
+            if is_translucent_type and player_under_tile:
+                # Полупрозрачный рендер - игрок видим сквозь крышу лавки/навеса
+                screen_x = tile.x - self.camera_x
+                screen_y = tile.y - self.camera_y
+                tile_surf = pygame.Surface((32, 32), pygame.SRCALPHA)
+                color = tile.get_color()
+                tile_surf.fill((*color, self.overlay_alpha_under_player))
+                screen.blit(tile_surf, (screen_x, screen_y))
+            else:
+                # Плотная отрисовка (быстрый путь). EMPTY-тайлы tile.draw()
+                # сам игнорирует - значит "ореола" вокруг игрока на песке/траве
+                # не будет, даже если overlay-сетка пересекает игрока.
+                tile.draw(screen, self.camera_x, self.camera_y)
+
     def draw_minimap(self, screen, player_x, player_y):
         """Отрисовка мини-карты в углу экрана"""
         minimap_size = 150
@@ -141,7 +214,12 @@ class World:
         pygame.draw.rect(screen, get_color('YELLOW'), (camera_mini_x, camera_mini_y, camera_mini_w, camera_mini_h), 1)
     
     def draw(self, screen, player_x, player_y):
-        """Отрисовка всего мира"""
+        """Отрисовка ЗЕМЛЯНОГО слоя мира (без overlay).
+
+        ВНИМАНИЕ: overlay (верхушки холмов и т.п.) нужно рисовать ОТДЕЛЬНО
+        после отрисовки игрока через World.draw_overlay(screen, player_rect).
+        Это позволяет холму/крыше визуально перекрывать игрока.
+        """
         self.draw_background(screen)
         self.draw_obstacles(screen)
         self.draw_minimap(screen, player_x, player_y)

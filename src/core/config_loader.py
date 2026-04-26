@@ -51,7 +51,12 @@ class ConfigLoader:
             self._validate_colors(parser)
             self._validate_debug_settings(parser)
             self._validate_world_generation_settings(parser)
-            
+            self._validate_enemies_settings(parser)
+            self._validate_combat_settings(parser)
+            self._validate_pickups_settings(parser)
+            self._validate_drops_settings(parser)
+            self._validate_progression_settings(parser)
+
             # Store validated configuration
             self._config = {
                 # Display settings
@@ -67,6 +72,14 @@ class ConfigLoader:
                 # Player settings
                 'PLAYER_SPEED': parser.getint('player', 'player_speed'),
                 'PLAYER_SIZE': parser.getint('player', 'player_size'),
+                'PLAYER_MAX_HEALTH': parser.getint('player', 'player_max_health')
+                    if parser.has_option('player', 'player_max_health') else 1000,
+                # Sprint - опциональный (default = 1.8 если не задан в config)
+                'PLAYER_SPRINT_MULTIPLIER': (
+                    parser.getfloat('player', 'player_sprint_multiplier')
+                    if parser.has_option('player', 'player_sprint_multiplier')
+                    else 1.8
+                ),
                 
                 # Attack settings
                 'ATTACK_DURATION': parser.getint('attack', 'attack_duration'),
@@ -81,7 +94,40 @@ class ConfigLoader:
                 'OBSTACLE_COUNT': parser.getint('world_generation', 'obstacle_count'),
                 'SAFE_ZONE_SIZE': parser.getint('world_generation', 'safe_zone_size'),
             }
-            
+
+            # Загружаем все ключи из секции [enemies] - они опциональные,
+            # подхватятся через get_config() как ENEMIES_<UPPERCASE_KEY>.
+            for section_name, prefix in [('enemies', 'ENEMIES'),
+                                          ('combat', 'COMBAT'),
+                                          ('pickups', 'PICKUPS'),
+                                          ('drops', 'DROPS'),
+                                          ('progression', 'PROGRESSION')]:
+                if not parser.has_section(section_name):
+                    continue
+                for key, value in parser.items(section_name):
+                    upper_key = f"{prefix}_{key.upper()}"
+                    # Цвета (содержат запятую) парсим как tuple
+                    if ',' in value:
+                        try:
+                            self._config[upper_key] = tuple(
+                                int(v.strip()) for v in value.split(',')
+                            )
+                            continue
+                        except ValueError:
+                            pass
+                    # Boolean
+                    if value.lower() in ('true', 'false'):
+                        self._config[upper_key] = value.lower() == 'true'
+                        continue
+                    # Числа - int или float
+                    try:
+                        self._config[upper_key] = int(value)
+                    except ValueError:
+                        try:
+                            self._config[upper_key] = float(value)
+                        except ValueError:
+                            self._config[upper_key] = value
+
             # Load colors
             colors = self._load_colors(parser)
             self._config.update(colors)
@@ -142,7 +188,16 @@ class ConfigLoader:
         player_size = parser.getint('player', 'player_size')
         if player_size <= 0:
             raise ConfigValidationError("player_size must be a positive integer")
-    
+
+        # Множитель спринта - опциональный (для обратной совместимости).
+        # Если задан - должен быть >= 1.0 (иначе спринт замедлял бы).
+        if parser.has_option('player', 'player_sprint_multiplier'):
+            sprint = parser.getfloat('player', 'player_sprint_multiplier')
+            if sprint < 1.0:
+                raise ConfigValidationError(
+                    "player_sprint_multiplier must be >= 1.0"
+                )
+
     def _validate_attack_settings(self, parser):
         """Validate attack-related settings"""
         if not parser.has_section('attack'):
@@ -206,7 +261,147 @@ class ConfigLoader:
         safe_zone_size = parser.getint('world_generation', 'safe_zone_size')
         if safe_zone_size < 0:
             raise ConfigValidationError("safe_zone_size must be a non-negative integer")
-    
+
+    def _validate_enemies_settings(self, parser):
+        """Валидация секции [enemies]: статы 3 типов + параметры спавна."""
+        if not parser.has_section('enemies'):
+            raise ConfigValidationError("Missing [enemies] section in config")
+
+        # Положительные числа
+        positive_int_keys = [
+            'light_max_health', 'light_speed', 'light_size', 'light_damage',
+            'heavy_max_health', 'heavy_speed', 'heavy_size', 'heavy_damage',
+            'fast_max_health', 'fast_speed', 'fast_size', 'fast_damage',
+            'patrol_radius_tiles', 'spawn_min_distance', 'spawn_max_attempts',
+        ]
+        for key in positive_int_keys:
+            if not parser.has_option('enemies', key):
+                raise ConfigValidationError(f"Missing enemies.{key}")
+            value = parser.getint('enemies', key)
+            if value <= 0:
+                raise ConfigValidationError(f"enemies.{key} must be positive")
+
+        # respawn_interval - опциональный float (если не задан = 5.0)
+        if parser.has_option('enemies', 'respawn_interval'):
+            interval = parser.getfloat('enemies', 'respawn_interval')
+            if interval <= 0:
+                raise ConfigValidationError(
+                    "enemies.respawn_interval must be positive"
+                )
+
+        # Неотрицательные счётчики (могут быть 0 если этот тип не нужен)
+        for key in ('initial_count_light', 'initial_count_heavy', 'initial_count_fast'):
+            if not parser.has_option('enemies', key):
+                raise ConfigValidationError(f"Missing enemies.{key}")
+            if parser.getint('enemies', key) < 0:
+                raise ConfigValidationError(f"enemies.{key} must be >= 0")
+
+        # Цвета RGB
+        for key in ('light_color', 'heavy_color', 'fast_color'):
+            if not parser.has_option('enemies', key):
+                raise ConfigValidationError(f"Missing enemies.{key}")
+            color_str = parser.get('enemies', key)
+            try:
+                parts = [int(x.strip()) for x in color_str.split(',')]
+                if len(parts) != 3 or not all(0 <= c <= 255 for c in parts):
+                    raise ValueError
+            except ValueError:
+                raise ConfigValidationError(
+                    f"enemies.{key} must be 'R,G,B' with values 0..255"
+                )
+
+    def _validate_combat_settings(self, parser):
+        """Валидация секции [combat]."""
+        if not parser.has_section('combat'):
+            raise ConfigValidationError("Missing [combat] section in config")
+        positive_float_keys = [
+            'player_iframe_duration', 'player_knockback_speed',
+            'player_knockback_duration', 'enemy_knockback_speed',
+            'enemy_knockback_duration', 'enemy_attack_cooldown',
+            'enemy_retreat_speed', 'enemy_retreat_duration',
+        ]
+        for key in positive_float_keys:
+            if not parser.has_option('combat', key):
+                raise ConfigValidationError(f"Missing combat.{key}")
+            val = parser.getfloat('combat', key)
+            if val <= 0:
+                raise ConfigValidationError(f"combat.{key} must be positive")
+
+    def _validate_pickups_settings(self, parser):
+        """Валидация секции [pickups]."""
+        if not parser.has_section('pickups'):
+            raise ConfigValidationError("Missing [pickups] section in config")
+        positive_float_keys = ['magnet_radius', 'magnet_speed', 'lifetime']
+        positive_int_keys = ['heart_heal_amount', 'coin_value', 'xp_orb_value']
+        for key in positive_float_keys:
+            if not parser.has_option('pickups', key):
+                raise ConfigValidationError(f"Missing pickups.{key}")
+            if parser.getfloat('pickups', key) <= 0:
+                raise ConfigValidationError(f"pickups.{key} must be positive")
+        for key in positive_int_keys:
+            if not parser.has_option('pickups', key):
+                raise ConfigValidationError(f"Missing pickups.{key}")
+            if parser.getint('pickups', key) <= 0:
+                raise ConfigValidationError(f"pickups.{key} must be positive")
+
+    def _validate_drops_settings(self, parser):
+        """Валидация секции [drops]."""
+        if not parser.has_section('drops'):
+            raise ConfigValidationError("Missing [drops] section in config")
+        for prefix in ('light', 'heavy', 'fast'):
+            # Шансы [0..1]
+            for suffix in ('heart_chance', 'coin_chance'):
+                key = f'{prefix}_{suffix}'
+                if not parser.has_option('drops', key):
+                    raise ConfigValidationError(f"Missing drops.{key}")
+                val = parser.getfloat('drops', key)
+                if not (0.0 <= val <= 1.0):
+                    raise ConfigValidationError(
+                        f"drops.{key} must be between 0 and 1"
+                    )
+            # Количество монет min/max
+            for suffix in ('coin_min', 'coin_max'):
+                key = f'{prefix}_{suffix}'
+                if not parser.has_option('drops', key):
+                    raise ConfigValidationError(f"Missing drops.{key}")
+                if parser.getint('drops', key) < 0:
+                    raise ConfigValidationError(f"drops.{key} must be >= 0")
+            # XP amount
+            xp_key = f'{prefix}_xp_amount'
+            if not parser.has_option('drops', xp_key):
+                raise ConfigValidationError(f"Missing drops.{xp_key}")
+            if parser.getint('drops', xp_key) < 0:
+                raise ConfigValidationError(f"drops.{xp_key} must be >= 0")
+
+    def _validate_progression_settings(self, parser):
+        """Валидация секции [progression]."""
+        if not parser.has_section('progression'):
+            raise ConfigValidationError("Missing [progression] section in config")
+        for key in ('xp_base', 'max_level'):
+            if not parser.has_option('progression', key):
+                raise ConfigValidationError(f"Missing progression.{key}")
+            if parser.getint('progression', key) < 1:
+                raise ConfigValidationError(
+                    f"progression.{key} must be >= 1"
+                )
+        for key in ('xp_growth',):
+            if not parser.has_option('progression', key):
+                raise ConfigValidationError(f"Missing progression.{key}")
+            if parser.getfloat('progression', key) <= 0:
+                raise ConfigValidationError(
+                    f"progression.{key} must be positive"
+                )
+        for key in ('hp_per_level', 'damage_per_level'):
+            if not parser.has_option('progression', key):
+                raise ConfigValidationError(f"Missing progression.{key}")
+            if parser.getint('progression', key) < 0:
+                raise ConfigValidationError(
+                    f"progression.{key} must be >= 0"
+                )
+        # heal_on_level_up - boolean
+        if parser.has_option('progression', 'heal_on_level_up'):
+            parser.getboolean('progression', 'heal_on_level_up')
+
     def _load_colors(self, parser) -> Dict[str, Tuple[int, int, int]]:
         """Load and parse color values from INI format"""
         colors = {}

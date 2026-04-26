@@ -5,6 +5,7 @@ import pytest
 import pygame
 import os
 from unittest.mock import patch, MagicMock
+from src.core.config_loader import get_config
 from src.entities.player import Player
 from src.world.terrain import TerrainTile, TerrainType
 
@@ -173,19 +174,25 @@ class TestPlayer:
             assert self.player.attacking == True
             
     def test_player_get_attack_rect(self):
-        """Test attack rectangle calculation for all 8 directions"""
-        # Test attack in all 8 directions
+        """Test attack rectangle calculation for all 8 directions.
+
+        После введения системы оружия размер зоны поражения берётся
+        из активного оружия. Стартовое оружие - меч 32x32 (одна клетка).
+        Главное - симметрия: для всех направлений возвращается валидный rect.
+        """
         directions = ['up', 'down', 'left', 'right', 'up_left', 'up_right', 'down_left', 'down_right']
-        
+        expected_w = self.player.current_weapon.rect_width
+        expected_h = self.player.current_weapon.rect_height
+
         for direction in directions:
             self.player.facing_direction = direction
             self.player.attacking = True
-            
+
             attack_rect = self.player.get_attack_rect()
             assert isinstance(attack_rect, pygame.Rect)
-            assert attack_rect.width == 30
-            assert attack_rect.height == 30
-            
+            assert attack_rect.width == expected_w
+            assert attack_rect.height == expected_h
+
         # Test no attack rect when not attacking
         self.player.attacking = False
         attack_rect = self.player.get_attack_rect()
@@ -228,8 +235,8 @@ class TestPlayer:
 
     def test_player_health_initialization(self):
         """Test player health system initialization"""
-        assert self.player.health == 100
-        assert self.player.max_health == 100
+        assert self.player.health == get_config('PLAYER_MAX_HEALTH')
+        assert self.player.max_health == get_config('PLAYER_MAX_HEALTH')
         assert self.player.damage_cooldown == 1000
         assert self.player.last_damage_time == 0
 
@@ -427,11 +434,13 @@ class TestPlayer:
         self.player.take_damage(damage)
         assert self.player.health == initial_health - damage
         
-        # Take more damage
+        # Take more damage (reset iframe to allow second hit)
+        self.player._stats.iframe_timer = 0
         self.player.take_damage(30)
         assert self.player.health == initial_health - damage - 30
         
         # Take massive damage - health should not go below 0
+        self.player._stats.iframe_timer = 0
         self.player.take_damage(1000)
         assert self.player.health == 0
         
@@ -441,17 +450,17 @@ class TestPlayer:
 
     def test_player_heal_method(self):
         """Test heal method"""
-        self.player.health = 50  # Reduce health
-        
+        max_hp = self.player.max_health
+        self.player.health = max_hp - 50  # Reduce health by 50
+
         # Heal player
-        heal_amount = 20
-        self.player.heal(heal_amount)
-        assert self.player.health == 70
-        
+        self.player.heal(20)
+        assert self.player.health == max_hp - 30
+
         # Overheal should not exceed max_health
-        self.player.heal(50)
-        assert self.player.health == self.player.max_health
-        
+        self.player.heal(max_hp)
+        assert self.player.health == max_hp
+
         # Dead player should not heal
         self.player.health = 0
         self.player.heal(50)
@@ -459,17 +468,76 @@ class TestPlayer:
 
     def test_player_get_health_percentage(self):
         """Test get_health_percentage method"""
+        max_hp = self.player.max_health
         # Full health should return 1.0
         assert self.player.get_health_percentage() == 1.0
-        
+
         # Half health should return 0.5
-        self.player.health = 50
+        self.player.health = max_hp // 2
         assert self.player.get_health_percentage() == 0.5
-        
+
         # Zero health should return 0.0
         self.player.health = 0
         assert self.player.get_health_percentage() == 0.0
-        
+
         # Test edge case with zero max_health
         self.player.max_health = 0
         assert self.player.get_health_percentage() == 0.0
+
+    # === Sprint (Shift) ===================================================
+
+    def _press(self, *codes):
+        """Имитация состояния клавиатуры: возвращает dict-like, где True
+        для перечисленных кодов и False для остальных."""
+        class _Keys:
+            def __init__(self, pressed):
+                self.pressed = set(pressed)
+            def __getitem__(self, code):
+                return code in self.pressed
+        return _Keys(codes)
+
+    def test_sprint_default_off(self):
+        """По умолчанию игрок не спринтует."""
+        assert self.player.is_sprinting is False
+
+    def test_sprint_activates_on_lshift(self):
+        keys = self._press(pygame.K_LSHIFT)
+        self.player.handle_input(keys)
+        assert self.player.is_sprinting is True
+
+    def test_sprint_activates_on_rshift(self):
+        keys = self._press(pygame.K_RSHIFT)
+        self.player.handle_input(keys)
+        assert self.player.is_sprinting is True
+
+    def test_sprint_off_when_shift_released(self):
+        # Сначала жмём
+        self.player.handle_input(self._press(pygame.K_LSHIFT))
+        assert self.player.is_sprinting
+        # Потом отпускаем
+        self.player.handle_input(self._press())
+        assert self.player.is_sprinting is False
+
+    def test_sprint_speed_multiplier_applied(self):
+        """При зажатом Shift игрок реально движется быстрее."""
+        # Без спринта - проходим X пикселей за 1 секунду
+        self.player.x = 100
+        self.player.y = 100
+        self.player.handle_input(self._press(pygame.K_d))  # вправо
+        self.player.update(dt=1.0, world=self.mock_world)
+        normal_x = self.player.x
+
+        # Сброс позиции и тот же ввод + Shift
+        self.player.x = 100
+        self.player.y = 100
+        self.player.handle_input(self._press(pygame.K_d, pygame.K_LSHIFT))
+        self.player.update(dt=1.0, world=self.mock_world)
+        sprint_x = self.player.x
+
+        # Должно быть ровно в sprint_multiplier раз дальше
+        normal_dist = normal_x - 100
+        sprint_dist = sprint_x - 100
+        ratio = sprint_dist / normal_dist
+        assert abs(ratio - self.player.sprint_multiplier) < 0.001, (
+            f"Sprint ratio {ratio} != multiplier {self.player.sprint_multiplier}"
+        )
