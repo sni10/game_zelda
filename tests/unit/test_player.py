@@ -173,19 +173,25 @@ class TestPlayer:
             assert self.player.attacking == True
             
     def test_player_get_attack_rect(self):
-        """Test attack rectangle calculation for all 8 directions"""
-        # Test attack in all 8 directions
+        """Test attack rectangle calculation for all 8 directions.
+
+        После введения системы оружия размер зоны поражения берётся
+        из активного оружия. Стартовое оружие - меч 32x32 (одна клетка).
+        Главное - симметрия: для всех направлений возвращается валидный rect.
+        """
         directions = ['up', 'down', 'left', 'right', 'up_left', 'up_right', 'down_left', 'down_right']
-        
+        expected_w = self.player.current_weapon.rect_width
+        expected_h = self.player.current_weapon.rect_height
+
         for direction in directions:
             self.player.facing_direction = direction
             self.player.attacking = True
-            
+
             attack_rect = self.player.get_attack_rect()
             assert isinstance(attack_rect, pygame.Rect)
-            assert attack_rect.width == 30
-            assert attack_rect.height == 30
-            
+            assert attack_rect.width == expected_w
+            assert attack_rect.height == expected_h
+
         # Test no attack rect when not attacking
         self.player.attacking = False
         attack_rect = self.player.get_attack_rect()
