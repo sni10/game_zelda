@@ -56,6 +56,7 @@ class ConfigLoader:
             self._validate_pickups_settings(parser)
             self._validate_drops_settings(parser)
             self._validate_progression_settings(parser)
+            self._validate_autosave_settings(parser)
 
             # Store validated configuration
             self._config = {
@@ -93,6 +94,27 @@ class ConfigLoader:
                 # World generation
                 'OBSTACLE_COUNT': parser.getint('world_generation', 'obstacle_count'),
                 'SAFE_ZONE_SIZE': parser.getint('world_generation', 'safe_zone_size'),
+
+                # Autosave (v0.3.3) — секция опциональна, дефолты сохраняют
+                # обратную совместимость.
+                'AUTOSAVE_ENABLED': (
+                    parser.getboolean('autosave', 'autosave_enabled')
+                    if parser.has_option('autosave', 'autosave_enabled') else True
+                ),
+                'AUTOSAVE_INTERVAL_MINUTES': (
+                    parser.getfloat('autosave', 'autosave_interval_minutes')
+                    if parser.has_option('autosave', 'autosave_interval_minutes')
+                    else 5.0
+                ),
+                'AUTOSAVE_LIMIT': (
+                    parser.getint('autosave', 'autosave_limit')
+                    if parser.has_option('autosave', 'autosave_limit') else 3
+                ),
+                'AUTOSAVE_ON_LEVEL_UP': (
+                    parser.getboolean('autosave', 'autosave_on_level_up')
+                    if parser.has_option('autosave', 'autosave_on_level_up')
+                    else True
+                ),
             }
 
             # Загружаем все ключи из секции [enemies] - они опциональные,
@@ -401,6 +423,27 @@ class ConfigLoader:
         # heal_on_level_up - boolean
         if parser.has_option('progression', 'heal_on_level_up'):
             parser.getboolean('progression', 'heal_on_level_up')
+
+    def _validate_autosave_settings(self, parser):
+        """Валидация секции [autosave] (опциональна — даём дефолты)."""
+        if not parser.has_section('autosave'):
+            return
+        if parser.has_option('autosave', 'autosave_enabled'):
+            parser.getboolean('autosave', 'autosave_enabled')
+        if parser.has_option('autosave', 'autosave_on_level_up'):
+            parser.getboolean('autosave', 'autosave_on_level_up')
+        if parser.has_option('autosave', 'autosave_interval_minutes'):
+            interval = parser.getfloat('autosave', 'autosave_interval_minutes')
+            if interval <= 0:
+                raise ConfigValidationError(
+                    "autosave.autosave_interval_minutes must be positive"
+                )
+        if parser.has_option('autosave', 'autosave_limit'):
+            limit = parser.getint('autosave', 'autosave_limit')
+            if limit < 1:
+                raise ConfigValidationError(
+                    "autosave.autosave_limit must be >= 1"
+                )
 
     def _load_colors(self, parser) -> Dict[str, Tuple[int, int, int]]:
         """Load and parse color values from INI format"""

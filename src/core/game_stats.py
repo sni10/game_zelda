@@ -103,3 +103,57 @@ class GameStats:
     def reset(self):
         """Сбросить статистику для новой игры"""
         self.__init__()
+
+    # --- Сериализация ------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        """Сериализация GameStats для сохранения.
+
+        Сохраняем актуальное накопленное play_time (а не start_time/now),
+        чтобы при загрузке восстановить корректный отсчёт времени.
+        """
+        self.update_play_time()
+        return {
+            "play_time": float(self.play_time),
+            "enemies_killed": int(self.enemies_killed),
+            "damage_dealt": int(self.damage_dealt),
+            "damage_taken": int(self.damage_taken),
+            "attacks_made": int(self.attacks_made),
+            "items_collected": int(self.items_collected),
+            "distance_traveled": float(self.distance_traveled),
+            "areas_discovered": int(self.areas_discovered),
+            "deaths": int(self.deaths),
+            "health_lost": int(self.health_lost),
+            "health_recovered": int(self.health_recovered),
+            "last_x": float(self.last_x),
+            "last_y": float(self.last_y),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "GameStats":
+        """Восстановить GameStats из словаря (round-trip к to_dict())."""
+        stats = cls()
+        stats.apply_dict(data)
+        return stats
+
+    def apply_dict(self, data: dict) -> None:
+        """Применить сохранённые данные к существующему GameStats.
+
+        Корректирует start_time так, чтобы будущие update_play_time() вернули
+        накопленное play_time + дельту с момента загрузки.
+        """
+        play_time = float(data.get("play_time", 0.0))
+        self.play_time = play_time
+        self.start_time = time.time() - play_time
+        self.enemies_killed = int(data.get("enemies_killed", 0))
+        self.damage_dealt = int(data.get("damage_dealt", 0))
+        self.damage_taken = int(data.get("damage_taken", 0))
+        self.attacks_made = int(data.get("attacks_made", 0))
+        self.items_collected = int(data.get("items_collected", 0))
+        self.distance_traveled = float(data.get("distance_traveled", 0))
+        self.areas_discovered = int(data.get("areas_discovered", 0))
+        self.deaths = int(data.get("deaths", 0))
+        self.health_lost = int(data.get("health_lost", 0))
+        self.health_recovered = int(data.get("health_recovered", 0))
+        self.last_x = float(data.get("last_x", 0))
+        self.last_y = float(data.get("last_y", 0))
