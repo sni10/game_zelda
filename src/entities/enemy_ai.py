@@ -41,9 +41,13 @@ class IdleBehavior(AIBehavior):
 
 
 class PatrolBehavior(AIBehavior):
-    """Случайное блуждание внутри patrol_zone врага.
+    """Случайное axial-блуждание внутри patrol_zone врага.
 
-    Враг периодически выбирает случайную цель в зоне и двигается к ней.
+    Враг выбирает случайную точку, СОВПАДАЮЩУЮ по одной координате
+    с текущей. То есть за один отрезок движется ТОЛЬКО горизонтально
+    или ТОЛЬКО вертикально - никаких диагоналей "как муха".
+    Результат - спокойный патруль типа "влево-вниз-влево-вверх".
+
     Достигнув цели (или истечения таймера) - выбирает новую.
     Если упёрся в препятствие - сразу выбирает новую цель.
     """
@@ -56,14 +60,26 @@ class PatrolBehavior(AIBehavior):
         self.repath_interval = repath_interval
 
     def _pick_target(self, enemy):
-        """Случайная точка в patrol_zone (ограниченная, чтобы враг
-        целиком помещался в зону)."""
+        """Случайная axial-цель в patrol_zone.
+
+        Выбираем одну из осей (x или y) и движемся ТОЛЬКО по ней.
+        Координата другой оси совпадает с текущей - никаких диагоналей.
+        """
         zone = enemy.patrol_zone
         max_x = max(zone.left, zone.right - enemy.rect.width)
         max_y = max(zone.top, zone.bottom - enemy.rect.height)
-        target_x = random.randint(zone.left, max_x) if max_x > zone.left else zone.left
-        target_y = random.randint(zone.top, max_y) if max_y > zone.top else zone.top
-        # Время до следующего перевыбора (рандом для разнообразия)
+
+        # Случайно: горизонтальное или вертикальное движение
+        if random.random() < 0.5:
+            # Горизонталь: меняем X, Y оставляем (округлённый до int чтобы
+            # не было микро-дрожаний)
+            target_x = random.randint(zone.left, max_x) if max_x > zone.left else zone.left
+            target_y = enemy.y
+        else:
+            # Вертикаль: меняем Y, X оставляем
+            target_x = enemy.x
+            target_y = random.randint(zone.top, max_y) if max_y > zone.top else zone.top
+
         timeout = random.uniform(0.6, self.repath_interval)
         return target_x, target_y, timeout
 
@@ -90,7 +106,9 @@ class PatrolBehavior(AIBehavior):
             enemy._patrol_timer = t
             return
 
-        # Двигаемся к цели с скоростью enemy.stats.speed
+        # Двигаемся к цели с скоростью enemy.stats.speed.
+        # Поскольку target axial - один из dx/dy будет почти 0,
+        # движение получится строго вдоль одной оси.
         speed = enemy.stats.speed
         nx = dx / distance
         ny = dy / distance

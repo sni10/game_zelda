@@ -93,7 +93,9 @@ class MeleeWeapon(Weapon):
     reach = 0
     rect_width = 32
     rect_height = 32
-    damage = 15
+    # Урон в "очках попадания" - HP врагов тоже в этих очках.
+    # Меч = 1 удар = 1 HP. Heavy с 3 HP умирает за 3 удара мечом.
+    damage = 1
     duration_ms = 250
     cooldown_ms = 120
 
@@ -109,7 +111,7 @@ class PolearmWeapon(Weapon):
     reach = 16
     rect_width = 32
     rect_height = 32
-    damage = 12
+    damage = 1                   # как меч
     duration_ms = 280
     cooldown_ms = 180
 
@@ -122,15 +124,14 @@ class RangedWeapon(Weapon):
     """Лук/стрельба: дальний бой, удар на 2-3 клетки впереди.
 
     Атака представлена линией из 3 клеток подряд - имитация "трассы стрелы".
-    В будущем заменится на настоящие projectile-сущности с движением,
-    но семантика поражения сохранится.
+    Каждый враг, попавший хоть в одну клетку трассы, получает 1 удар.
     """
     name = "Bow"
     color = (255, 160, 60)       # оранжевая
     reach = 0  # не используется напрямую - своя логика трассы
     rect_width = 32
     rect_height = 32
-    damage = 10
+    damage = 1
     duration_ms = 200
     cooldown_ms = 250
 
@@ -152,13 +153,16 @@ class RangedWeapon(Weapon):
 
 
 class AoeWeapon(Weapon):
-    """Снаряд с областным поражением: бабах на 2 клетки впереди радиусом 3x3."""
+    """Снаряд с областным поражением: бабах на 2 клетки впереди радиусом 3x3.
+
+    Урон = 3 - убивает Heavy с одного попадания, Light/Fast - тем более.
+    """
     name = "Bomb"
     color = (255, 80, 80)        # красная
     reach = 48  # 1.5 клетки до центра взрыва
     rect_width = 96   # 3 клетки
     rect_height = 96
-    damage = 25
+    damage = 3                   # достаточно чтобы убить Heavy за один взрыв
     duration_ms = 400
     cooldown_ms = 600
 

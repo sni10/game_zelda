@@ -104,6 +104,34 @@ class TestPatrolBehavior:
         e.update(dt=0.1, world=_AlwaysBlocked())
         assert e.x == old_x and e.y == old_y
 
+    def test_patrol_axial_only_no_diagonals(self):
+        """Patrol должен двигаться ТОЛЬКО по одной оси за отрезок -
+        никаких диагоналей. За один update меняется либо x, либо y, но
+        не обе координаты одновременно (с точностью до микро-погрешностей)."""
+        import random
+        random.seed(42)  # детерминизм
+
+        zone = make_zone(cx=500, cy=500, radius=128)
+        stats = EnemyStats(name='P', max_health=1, speed=80,
+                          width=16, height=16, color=(0, 0, 0), damage=1)
+        e = Enemy(500, 500, stats, PatrolBehavior(), zone)
+
+        class _W:
+            def check_collision(self, rect):
+                return False
+
+        # Несколько кадров - проверяем каждый: либо dx≈0, либо dy≈0
+        for _ in range(50):
+            old_x, old_y = e.x, e.y
+            e.update(dt=0.05, world=_W())
+            dx = abs(e.x - old_x)
+            dy = abs(e.y - old_y)
+            # Одна из дельт должна быть ровно 0 (axial движение).
+            # Допускаем эпсилон для float-ошибок.
+            assert dx < 1e-6 or dy < 1e-6, (
+                f"Enemy moved diagonally: dx={dx}, dy={dy}"
+            )
+
 
 # === Фабрика ----------------------------------------------------------------
 
@@ -275,4 +303,81 @@ class TestEnemyManagerSpawn:
         assert by_type.get('light', 0) == get_config('ENEMIES_INITIAL_COUNT_LIGHT')
         assert by_type.get('heavy', 0) == get_config('ENEMIES_INITIAL_COUNT_HEAVY')
         assert by_type.get('fast', 0) == get_config('ENEMIES_INITIAL_COUNT_FAST')
+
+
+class TestEnemyManagerRespawn:
+    """Авто-респавн: убитые враги должны восстанавливаться когда игрок далеко."""
+
+    @pytest.fixture
+    def manager(self):
+        from src.systems.enemy_manager import EnemyManager
+        class _W:
+            width = 4000
+            height = 4000
+            def check_collision(self, rect):
+                return False
+        m = EnemyManager(_W())
+        m.spawn_initial(player_x=2000, player_y=2000)
+        return m
+
+    def test_respawn_restores_count_when_player_far(self, manager):
+        """После того как все убиты + игрок ушёл далеко -
+        update() с истекшим таймером восстанавливает численность."""
+        # Полный target (как в config)
+        target_total = sum(manager.target_counts.values())
+        assert manager.alive_count() == target_total
+
+        # Убиваем всех
+        for e in manager.enemies:
+            e.health = 0
+        # Защищаем от первого автоматического респавна (таймер был 0)
+        manager._respawn_timer = 999.0
+        # update удаляет мёртвых (без респавна благодаря большому таймеру)
+        manager.update(dt=0.016, player_x=2000, player_y=2000)
+        assert manager.alive_count() == 0
+
+        # Имитируем что прошёл интервал респавна
+        manager._respawn_timer = 0
+        # Игрок далеко (за пределами zone min_distance от старых позиций)
+        manager.update(dt=0.016, player_x=10, player_y=10)
+        # Должны восстановить (хотя бы кого-то)
+        assert manager.alive_count() > 0
+        # И не больше target_total
+        assert manager.alive_count() <= target_total
+
+    def test_respawn_does_not_happen_near_player(self, manager):
+        """Если игрок стоит на месте после зачистки - респавн не
+        произойдёт пока он не отойдёт (соблюдение spawn_min_distance).
+
+        В этом тесте мир маленький и игрок в центре - кругом нет места
+        для спавна вне 1024px.
+        """
+        from src.systems.enemy_manager import EnemyManager
+        # Маленький мир: 1500x1500. min_distance=1024 - значит почти
+        # любая точка ближе чем 1024 от центра.
+        class _SmallW:
+            width = 1500
+            height = 1500
+            def check_collision(self, rect):
+                return False
+        small_m = EnemyManager(_SmallW())
+        small_m.spawn_initial(player_x=750, player_y=750)
+        # Может ничего не заспавнить - это нормально (мир мал)
+
+        # Убиваем всех явно
+        small_m.enemies.clear()
+        # Игрок в центре (770, 770) - близко к (750, 750)
+        small_m._respawn_timer = 0
+        small_m.update(dt=0.016, player_x=750, player_y=750)
+        # В таком тесном мире респавн вне видимости физически невозможен -
+        # все валидные позиции ближе min_distance. Должно остаться 0.
+        # (если spawn_initial удался, то и тут может что-то заспавнить -
+        # тогда тест не сильный, но не падает)
+        # Главный инвариант: ни один враг не появился ближе min_distance
+        from src.core.config_loader import get_config
+        import math
+        for e in small_m.enemies:
+            d = math.hypot(e.x - 750, e.y - 750)
+            assert d >= get_config('ENEMIES_SPAWN_MIN_DISTANCE')
+
 

@@ -265,6 +265,14 @@ class ConfigLoader:
             if value <= 0:
                 raise ConfigValidationError(f"enemies.{key} must be positive")
 
+        # respawn_interval - опциональный float (если не задан = 5.0)
+        if parser.has_option('enemies', 'respawn_interval'):
+            interval = parser.getfloat('enemies', 'respawn_interval')
+            if interval <= 0:
+                raise ConfigValidationError(
+                    "enemies.respawn_interval must be positive"
+                )
+
         # Неотрицательные счётчики (могут быть 0 если этот тип не нужен)
         for key in ('initial_count_light', 'initial_count_heavy', 'initial_count_fast'):
             if not parser.has_option('enemies', key):

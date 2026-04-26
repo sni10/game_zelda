@@ -208,8 +208,8 @@ class Game:
         self.player.handle_input(keys)
         self.player.update(dt, self.world, self.game_stats)
 
-        # Враги патрулируют свои зоны
-        self.world.enemy_manager.update(dt)
+        # Враги патрулируют свои зоны + авто-респавн при удалении игрока
+        self.world.enemy_manager.update(dt, self.player.x, self.player.y)
 
         # Если игрок атакует - применяем урон врагам.
         # apply_player_attack использует attack_id, чтобы 1 атака

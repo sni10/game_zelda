@@ -28,6 +28,16 @@ class EnemyManager:
     def __init__(self, world):
         self.world = world
         self.enemies: List[Enemy] = []
+        # Целевое количество врагов по типам - устанавливается при
+        # spawn_initial(). Используется для авто-респавна: когда игрок
+        # уходит далеко и убитые враги "забываются", новые появляются
+        # чтобы восстановить численность.
+        self.target_counts: dict = {}
+        # Таймер до следующей попытки респавна (секунды)
+        self._respawn_timer = 0.0
+        # Координаты игрока обновляются из update() - нужны для проверки
+        # минимальной дистанции при респавне.
+        self._last_player_pos = (0.0, 0.0)
 
     # --- Спавн -------------------------------------------------------------
 
@@ -94,12 +104,18 @@ class EnemyManager:
 
     def spawn_initial(self, player_x: float, player_y: float) -> int:
         """Заспавнить врагов согласно initial_count_* из конфига.
-        Возвращает количество реально созданных."""
+        Возвращает количество реально созданных.
+
+        Запоминает целевые количества для последующего авто-респавна.
+        """
         targets = {
             'light': get_config('ENEMIES_INITIAL_COUNT_LIGHT'),
             'heavy': get_config('ENEMIES_INITIAL_COUNT_HEAVY'),
             'fast':  get_config('ENEMIES_INITIAL_COUNT_FAST'),
         }
+        # Сохраняем для респавна
+        self.target_counts = dict(targets)
+
         total_spawned = 0
         for type_id, count in targets.items():
             for _ in range(count):
@@ -107,14 +123,55 @@ class EnemyManager:
                     total_spawned += 1
         return total_spawned
 
+    # --- Респавн -----------------------------------------------------------
+
+    def _try_respawn_missing(self, player_x: float, player_y: float) -> int:
+        """Попытаться доспавнить врагов до target_counts.
+
+        Учитывает spawn_min_distance - значит респавн произойдёт ТОЛЬКО
+        в зонах, удалённых от игрока. То есть пока игрок стоит в зачищенной
+        области, новые враги там не появятся - только когда отойдёт.
+
+        Возвращает количество реально заспавненных врагов.
+        """
+        if not self.target_counts:
+            return 0
+
+        current = self.alive_by_type()
+        spawned = 0
+        for type_id, target in self.target_counts.items():
+            missing = target - current.get(type_id, 0)
+            for _ in range(missing):
+                if self.spawn_enemy(type_id, player_x, player_y) is not None:
+                    spawned += 1
+        return spawned
+
     # --- Обновление --------------------------------------------------------
 
-    def update(self, dt: float) -> None:
-        """Обновить AI всех живых врагов и удалить мёртвых."""
+    def update(self, dt: float, player_x: float = None, player_y: float = None) -> None:
+        """Обновить AI всех живых врагов и удалить мёртвых.
+
+        Если переданы координаты игрока - также периодически пытаемся
+        восстановить численность убитых врагов (auto-respawn). Респавн
+        соблюдает spawn_min_distance, поэтому игрок увидит "новых" врагов
+        только когда отойдёт от зачищенной зоны.
+        """
         for enemy in self.enemies:
             enemy.update(dt, self.world)
         # Чистим мёртвых
         self.enemies = [e for e in self.enemies if not e.is_dead()]
+
+        # Авто-респавн (опционально - если переданы координаты игрока)
+        if player_x is not None and player_y is not None:
+            self._last_player_pos = (player_x, player_y)
+            self._respawn_timer -= dt
+            if self._respawn_timer <= 0:
+                # Сброс таймера ДО спавна (не зациклиться даже если нет места)
+                try:
+                    self._respawn_timer = float(get_config('ENEMIES_RESPAWN_INTERVAL'))
+                except KeyError:
+                    self._respawn_timer = 5.0  # default
+                self._try_respawn_missing(player_x, player_y)
 
     # --- Урон от атаки игрока ---------------------------------------------
 
