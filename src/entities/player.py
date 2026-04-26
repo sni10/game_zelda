@@ -2,6 +2,8 @@ import pygame
 import math
 from src.core.config_loader import get_config, get_color
 from src.entities.weapons import Weapon, default_loadout
+from src.entities.player_stats import PlayerStats
+from src.entities.player_combat import PlayerCombat
 
 
 class Player:
@@ -14,68 +16,130 @@ class Player:
         
         # Скорость движения (как в классической Zelda)
         self.speed = 120  # пикселей в секунду
-        # Множитель скорости при удержании Shift. Берём из конфига, чтобы
-        # геймдизайн (баланс) можно было крутить без правки кода.
+        # Множитель скорости при удержании Shift.
         self.sprint_multiplier = get_config('PLAYER_SPRINT_MULTIPLIER')
-        self.is_sprinting = False  # обновляется в handle_input()
+        self.is_sprinting = False
 
         # Направление движения
         self.direction_x = 0
         self.direction_y = 0
-        self.facing_direction = 'down'  # направление взгляда для атаки (8 направлений)
-        
-        # Система здоровья
-        self.max_health = get_config('PLAYER_MAX_HEALTH')
-        self.health = self.max_health
-        self.last_damage_time = 0
-        self.damage_cooldown = 1000  # миллисекунды между уроном от окружения
-        
-        # Система атаки. Параметры конкретной атаки берутся из активного оружия,
-        # а здесь храним только runtime-состояние ("атакует прямо сейчас").
-        self.attacking = False
-        self.attack_timer = 0          # время старта текущей атаки (ticks)
-        self.last_attack_time = 0      # для cooldown между атаками
-        # Уникальный ID текущего взмаха оружия. Инкрементируется при старте
-        # каждой новой атаки. EnemyManager использует это, чтобы не наносить
-        # урон одной атакой несколько раз (атака длится 200-400мс = много кадров).
-        self.attack_id = 0
+        self.facing_direction = 'down'
 
-        # Инвентарь оружий и активное оружие
-        self.weapons = default_loadout()
-        self.current_weapon_index = 0
+        # Делегаты: здоровье и боевая система
+        self._stats = PlayerStats(get_config('PLAYER_MAX_HEALTH'))
+        self._combat = PlayerCombat()
+
+        # Cooldown урона от окружения
+        self.last_damage_time = 0
+        self.damage_cooldown = 1000
 
         # Прямоугольник для коллизий
         self.rect = pygame.Rect(x, y, self.width, self.height)
 
+    # --- Backward-compatible API для здоровья (делегирует PlayerStats) ------
+
+    @property
+    def max_health(self):
+        return self._stats.max_health
+
+    @max_health.setter
+    def max_health(self, value):
+        self._stats.max_health = value
+
+    @property
+    def health(self):
+        return self._stats.health
+
+    @health.setter
+    def health(self, value):
+        self._stats.health = value
+
+    def is_dead(self):
+        return self._stats.is_dead()
+
+    def take_damage(self, damage, game_stats=None):
+        self._stats.take_damage(damage, game_stats)
+
+    def heal(self, amount):
+        self._stats.heal(amount)
+
+    def get_health_percentage(self):
+        return self._stats.get_health_percentage()
+
+    # --- Backward-compatible API для боя (делегирует PlayerCombat) ----------
+
+    @property
+    def attacking(self):
+        return self._combat.attacking
+
+    @attacking.setter
+    def attacking(self, value):
+        self._combat.attacking = value
+
+    @property
+    def attack_timer(self):
+        return self._combat.attack_timer
+
+    @attack_timer.setter
+    def attack_timer(self, value):
+        self._combat.attack_timer = value
+
+    @property
+    def last_attack_time(self):
+        return self._combat.last_attack_time
+
+    @last_attack_time.setter
+    def last_attack_time(self, value):
+        self._combat.last_attack_time = value
+
+    @property
+    def attack_id(self):
+        return self._combat.attack_id
+
+    @attack_id.setter
+    def attack_id(self, value):
+        self._combat.attack_id = value
+
+    @property
+    def weapons(self):
+        return self._combat.weapons
+
+    @weapons.setter
+    def weapons(self, value):
+        self._combat.weapons = value
+
+    @property
+    def current_weapon_index(self):
+        return self._combat.current_weapon_index
+
+    @current_weapon_index.setter
+    def current_weapon_index(self, value):
+        self._combat.current_weapon_index = value
+
     @property
     def current_weapon(self) -> Weapon:
-        """Текущее активное оружие."""
-        return self.weapons[self.current_weapon_index]
+        return self._combat.current_weapon
 
     def switch_weapon(self, index: int) -> bool:
-        """Переключить оружие по индексу (0..N-1).
+        return self._combat.switch_weapon(index)
 
-        Возвращает True если переключение произошло.
-        Если игрок в процессе атаки - переключение отклоняется.
-        """
-        if self.attacking:
-            return False
-        if 0 <= index < len(self.weapons):
-            if index != self.current_weapon_index:
-                self.current_weapon_index = index
-                return True
-        return False
+    def try_attack(self):
+        self._combat.try_attack()
+
+    def get_attack_rects(self):
+        """Получить все прямоугольники зон поражения текущей атаки."""
+        return self._combat.get_attack_rects(self.rect, self.facing_direction)
+
+    def get_attack_rect(self):
+        """Совместимость: вернуть первую зону атаки или None."""
+        rects = self.get_attack_rects()
+        return rects[0] if rects else None
+
+    # --- Ввод и логика движения -------------------------------------------
 
     @staticmethod
     def _is_key_pressed(keys, code):
-        """Безопасное чтение состояния клавиши.
-
-        pygame.key.get_pressed() возвращает sequence-like с фиксированной
-        длиной (все клавиши доступны). Но в тестах мокают обычным dict,
-        который выбрасывает KeyError на отсутствующих ключах. Этот хелпер
-        возвращает False вместо исключения - удобно для частично-замоканных
-        тестов.
-        """
+        """Безопасное чтение состояния клавиши (для моков в тестах)."""
         try:
             return bool(keys[code])
         except (KeyError, IndexError):
@@ -87,8 +151,7 @@ class Player:
         self.direction_x = 0
         self.direction_y = 0
 
-        # Спринт - удержание любого Shift. Атакующий не может спринтовать
-        # (атака блокирует движение в update()).
+        # Спринт
         self.is_sprinting = (
             self._is_key_pressed(keys, pygame.K_LSHIFT)
             or self._is_key_pressed(keys, pygame.K_RSHIFT)
@@ -125,108 +188,57 @@ class Player:
             
         # Нормализация диагонального движения
         if self.direction_x != 0 and self.direction_y != 0:
-            # Уменьшаем скорость по диагонали для равномерного движения
             self.direction_x *= 0.707  # 1/sqrt(2)
             self.direction_y *= 0.707
             
         # Атака на пробел
         if keys[pygame.K_SPACE]:
             self.try_attack()
-    
-    def try_attack(self):
-        """Попытка атаки с учётом cooldown текущего оружия."""
-        current_time = pygame.time.get_ticks()
-        weapon = self.current_weapon
-        if not self.attacking and current_time - self.last_attack_time > weapon.cooldown_ms:
-            self.attacking = True
-            self.attack_timer = current_time
-            self.last_attack_time = current_time
-            # Новый взмах = новый ID. EnemyManager сравнивает его с
-            # last_hit_attack_id у каждого врага, чтобы 1 атака = 1 урон.
-            self.attack_id += 1
 
     def update(self, dt, world, game_stats=None):
         """Обновление состояния игрока"""
-        # Обновление атаки - длительность зависит от оружия
-        if self.attacking:
-            current_time = pygame.time.get_ticks()
-            if current_time - self.attack_timer > self.current_weapon.duration_ms:
-                self.attacking = False
-        
+        # Обновление атаки
+        self._combat.update_attack()
+
         # Движение
-        if not self.attacking:  # Нельзя двигаться во время атаки
-            # Проверяем текущий ландшафт для модификации скорости
+        if not self.attacking:
             current_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
             speed_modifier = current_tile.speed_modifier if current_tile else 1.0
-            # Применяем sprint multiplier если зажат Shift.
-            # Sprint умножается ПОСЛЕ модификатора террейна - это значит
-            # на песке (speed_modifier=0.5) спринт всё равно даст ускорение,
-            # но абсолютная скорость останется ниже обычной без спринта.
             sprint = self.sprint_multiplier if self.is_sprinting else 1.0
             effective_speed = self.speed * speed_modifier * sprint
             
-            # Вычисление новой позиции
             new_x = self.x + self.direction_x * effective_speed * dt
             new_y = self.y + self.direction_y * effective_speed * dt
             
-            # Ограничение движения границами мира
             new_x = max(0, min(new_x, world.width - self.width))
             new_y = max(0, min(new_y, world.height - self.height))
             
-            # Создаем временный rect для проверки коллизий
             temp_rect = pygame.Rect(int(new_x), int(new_y), self.width, self.height)
             
-            # Проверка коллизий с препятствиями
             if not world.check_collision(temp_rect):
-                # Обновление позиции только если нет коллизий
                 self.x = new_x
                 self.y = new_y
                 self.rect.x = int(self.x)
                 self.rect.y = int(self.y)
                 
-                # Проверяем урон от ландшафта
                 new_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
                 if new_tile and new_tile.damages_player:
                     current_time = pygame.time.get_ticks()
                     if current_time - self.last_damage_time > self.damage_cooldown:
                         self.take_damage(new_tile.damage_amount, game_stats)
                         self.last_damage_time = current_time
-    
-    def get_attack_rects(self):
-        """Получить ВСЕ прямоугольники зон поражения текущей атаки.
 
-        Делегирует расчёт активному оружию. Реализация в weapons.py
-        использует симметричную формулу _rect_in_direction(), поэтому
-        зоны атаки одинаково расположены во всех 8 направлениях
-        (в отличие от старой версии, где down/right были впритык,
-        а up/left имели зазор).
-        """
-        if not self.attacking:
-            return []
-        return self.current_weapon.get_attack_rects(self.rect, self.facing_direction)
-
-    def get_attack_rect(self):
-        """Совместимость: вернуть первую зону атаки или None.
-
-        Старый код использовал именно одну зону. Для AOE/ranged лучше
-        использовать get_attack_rects() (мн.ч.).
-        """
-        rects = self.get_attack_rects()
-        return rects[0] if rects else None
+    # --- Отрисовка ---------------------------------------------------------
 
     def draw(self, screen, camera_x=0, camera_y=0):
         """Отрисовка игрока"""
-        # Позиция на экране с учетом камеры
         screen_x = int(self.x - camera_x)
         screen_y = int(self.y - camera_y)
         
-        # Цвет игрока (зеленый, красный во время атаки)
         color = get_color('RED') if self.attacking else get_color('GREEN')
-        
-        # Рисуем игрока как прямоугольник
         pygame.draw.rect(screen, color, (screen_x, screen_y, self.width, self.height))
         
-        # Рисуем направление взгляда
+        # Направление взгляда
         center_x = screen_x + self.width // 2
         center_y = screen_y + self.height // 2
         
@@ -247,8 +259,7 @@ class Player:
         elif self.facing_direction == 'down_right':
             pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, screen_y + self.height - 5), 3)
         
-        # Рисуем зоны атаки текущего оружия (их может быть несколько -
-        # например, "трасса стрелы" из 3 клеток для лука).
+        # Зоны атаки
         if self.attacking:
             weapon = self.current_weapon
             for attack_rect in self.get_attack_rects():
@@ -260,28 +271,3 @@ class Player:
                 )
                 pygame.draw.rect(screen, weapon.color, attack_screen_rect, 2)
 
-    def is_dead(self):
-        """Проверка, мертв ли игрок"""
-        return self.health <= 0
-    
-    def take_damage(self, damage, game_stats=None):
-        """Нанести урон игроку"""
-        if not self.is_dead():
-            self.health -= damage
-            if self.health < 0:
-                self.health = 0
-            
-            # Уведомляем статистику о полученном уроне
-            if game_stats:
-                game_stats.record_damage_taken(damage)
-    
-    def heal(self, amount):
-        """Восстановить здоровье игрока"""
-        if not self.is_dead():
-            self.health += amount
-            if self.health > self.max_health:
-                self.health = self.max_health
-    
-    def get_health_percentage(self):
-        """Получить процент здоровья (0.0 - 1.0)"""
-        return self.health / self.max_health if self.max_health > 0 else 0.0
