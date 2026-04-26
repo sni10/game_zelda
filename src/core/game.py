@@ -164,13 +164,19 @@ class Game:
         else:
             self.log("❌ Ошибка создания подземного мира!", "ERROR")
 
-        # Создание старого Player объекта для совместимости
-        self.player = Player(player_start_x, player_start_y)
+        # Создание старого Player объекта для совместимости.
+        # player_start_x/y - это ЦЕНТР стартового тайла (terrain.py: tile_x + 16),
+        # а Player(x, y) принимает координаты ЛЕВОГО ВЕРХНЕГО угла rect 32x32.
+        # Поэтому смещаем на половину размера игрока, чтобы игрок оказался
+        # ровно по центру тайла @, а не пересекал 4 соседних тайла.
+        spawn_x = player_start_x - 16  # 16 = PLAYER_SIZE // 2
+        spawn_y = player_start_y - 16
+        self.player = Player(spawn_x, spawn_y)
         self.log(f"Игрок создан: HP={self.player.health}/{self.player.max_health}")
 
-        # Создание ECS сущности игрока
+        # Создание ECS сущности игрока (синхронно с legacy Player - левый верхний угол)
         self.player_entity = self.entity_manager.create_entity()
-        self.player_entity.add_component(PositionComponent(player_start_x, player_start_y, 0, "main_world"))
+        self.player_entity.add_component(PositionComponent(spawn_x, spawn_y, 0, "main_world"))
         self.player_entity.add_component(RenderLayerComponent(0))
         self.player_entity.add_component(ZLevelComponent(0))
         self.log(f"ECS сущность игрока создана: ID={id(self.player_entity)}")
@@ -448,10 +454,13 @@ class Game:
             if not player_pos or player_pos.z == 0:
                 # Очищаем экран правильным цветом
                 self.screen.fill(get_color('BLACK'))
-                # Рендерим основной мир с координатами игрока
+                # Рендерим основной мир с координатами игрока (земля + фон + миникарта)
                 self.world.draw(self.screen, self.player.x, self.player.y)
-                # Рендерим игрока
+                # Рендерим игрока ПОВЕРХ земли
                 self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
+                # Рендерим overlay-слой (верхушки холмов) ПОВЕРХ игрока,
+                # с эффектом полупрозрачности когда игрок под тайлом
+                self.world.draw_overlay(self.screen, self.player.rect)
             else:
 
                 # В пещере используем LayerRenderer

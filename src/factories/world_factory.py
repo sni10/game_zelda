@@ -170,7 +170,7 @@ class CaveWorldFactory(WorldFactory):
         
         # Загружаем карту из файла cave_world.txt
         try:
-            terrain_tiles, _, _ = load_map_from_file("data/cave_world.txt")
+            terrain_tiles, _overlay_tiles, _, _ = load_map_from_file("data/cave_world.txt")
             surface_map = self._convert_tiles_to_map(terrain_tiles)
             # Используем размеры загруженной карты
             map_width = len(surface_map[0]) if surface_map else 25
