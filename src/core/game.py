@@ -21,6 +21,7 @@ from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
 from src.world.world import World
 from src.systems.save_system import SaveSystem
+from src.systems.pickup_manager import PickupManager
 
 
 # Размер игрока (32x32) - используется для центрирования в стартовом тайле.
@@ -56,6 +57,7 @@ class Game:
         self.game_stats: GameStats = None
         self.game_over_screen: GameOverScreen = None
         self.hud: HUD = None
+        self.pickup_manager: PickupManager = None
 
         # Тайминги игрового цикла
         self.last_time = pygame.time.get_ticks()
@@ -82,6 +84,10 @@ class Game:
         self.world = World(map_file=os.path.join('data', 'main_world.txt'))
         start_x, start_y = self.world.get_player_start_position()
         self.log(f"Стартовая позиция (центр тайла @): ({start_x}, {start_y})")
+
+        # PickupManager — система дропа/сбора пикапов
+        self.pickup_manager = PickupManager()
+        self.world.enemy_manager.pickup_manager = self.pickup_manager
 
         # Игрок спавнится центрированно в тайле, чтобы не пересекать
         # соседние клетки и не застревать у стенок.
@@ -188,7 +194,9 @@ class Game:
         self.player.update(dt, self.world, self.game_stats)
 
         # Враги патрулируют свои зоны + авто-респавн при удалении игрока
-        self.world.enemy_manager.update(dt, self.player.x, self.player.y)
+        self.world.enemy_manager.update(
+            dt, self.player.x, self.player.y, player=self.player
+        )
 
         # Если игрок атакует - применяем урон врагам.
         # apply_player_attack использует attack_id, чтобы 1 атака
@@ -199,7 +207,8 @@ class Game:
             hits, kills = self.world.enemy_manager.apply_player_attack(
                 self.player.attack_id,
                 self.player.get_attack_rects(),
-                weapon.damage,
+                weapon.damage + self.player.damage_bonus,
+                player=self.player,
             )
             if kills > 0 and self.game_stats:
                 for _ in range(kills):
@@ -212,6 +221,10 @@ class Game:
 
         # Контактный урон от врагов (враг касается игрока = дамаг)
         self.world.enemy_manager.apply_contact_damage(self.player)
+
+        # Обновление пикапов (магнит + сбор)
+        if self.pickup_manager:
+            self.pickup_manager.update(dt, self.player)
 
         # Камера следует за игроком
         self.world.update_camera(
@@ -230,15 +243,20 @@ class Game:
             self.screen.fill(get_color('BLACK'))
             # 1) Земля + миникарта
             self.world.draw(self.screen, self.player.x, self.player.y)
-            # 2) Враги поверх земли (но под игроком)
+            # 2) Пикапы поверх земли (но под врагами)
+            if self.pickup_manager:
+                self.pickup_manager.draw(
+                    self.screen, self.world.camera_x, self.world.camera_y
+                )
+            # 3) Враги поверх земли (но под игроком)
             self.world.enemy_manager.draw(
                 self.screen, self.world.camera_x, self.world.camera_y
             )
-            # 3) Игрок поверх врагов
+            # 4) Игрок поверх врагов
             self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
-            # 4) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
+            # 5) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
             self.world.draw_overlay(self.screen, self.player.rect)
-            # 5) HUD
+            # 6) HUD
             if self.hud:
                 self.hud.draw(self.screen, self.player)
 
@@ -259,12 +277,17 @@ class Game:
     def _draw_debug_info(self):
         info = [
             f"Player: ({int(self.player.x)}, {int(self.player.y)})",
+            f"HP: {self.player.health}/{self.player.max_health}"
+            f" | Lv.{self.player.level}"
+            f" | XP: {self.player.xp}/{self.player.stats.xp_to_next_level}"
+            f" | Coins: {self.player.coins}",
             f"Direction: {self.player.facing_direction}",
             f"Sprint: {self.player.is_sprinting} (x{self.player.sprint_multiplier})",
-            f"Weapon: {self.player.current_weapon.name}",
+            f"Weapon: {self.player.current_weapon.name} (dmg={self.player.current_weapon.damage}+{self.player.damage_bonus})",
             f"Attacking: {self.player.attacking} (id={self.player.attack_id})",
             f"Enemies alive: {self.world.enemy_manager.alive_count()} "
             f"({self.world.enemy_manager.alive_by_type()})",
+            f"Pickups: {self.pickup_manager.count() if self.pickup_manager else 0}",
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
             "Controls: WASD - Move, Shift - Sprint, Space - Attack, 1..4 - Weapon",
@@ -299,6 +322,9 @@ class Game:
         if not self.player or not self.world:
             self.world = World(map_file=os.path.join('data', 'main_world.txt'))
             self.player = Player(0, 0)
+        if not self.pickup_manager:
+            self.pickup_manager = PickupManager()
+            self.world.enemy_manager.pickup_manager = self.pickup_manager
         if not self.game_stats:
             self.game_stats = GameStats()
         if not self.game_over_screen:

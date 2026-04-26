@@ -18,6 +18,7 @@ import pygame
 from src.core.config_loader import get_config
 from src.entities.enemy import Enemy
 from src.entities.enemy_factory import EnemyFactory
+from src.entities.pickup import HeartPickup, CoinPickup, XPOrbPickup
 
 
 class EnemyManager:
@@ -25,9 +26,10 @@ class EnemyManager:
 
     TILE_SIZE = 32  # размер тайла (для расчёта patrol_zone)
 
-    def __init__(self, world):
+    def __init__(self, world, pickup_manager=None):
         self.world = world
         self.enemies: List[Enemy] = []
+        self.pickup_manager = pickup_manager
         # Целевое количество врагов по типам - устанавливается при
         # spawn_initial(). Используется для авто-респавна: когда игрок
         # уходит далеко и убитые враги "забываются", новые появляются
@@ -148,7 +150,8 @@ class EnemyManager:
 
     # --- Обновление --------------------------------------------------------
 
-    def update(self, dt: float, player_x: float = None, player_y: float = None) -> None:
+    def update(self, dt: float, player_x: float = None, player_y: float = None,
+               player=None) -> None:
         """Обновить AI всех живых врагов и удалить мёртвых.
 
         Если переданы координаты игрока - также периодически пытаемся
@@ -157,7 +160,9 @@ class EnemyManager:
         только когда отойдёт от зачищенной зоны.
         """
         for enemy in self.enemies:
-            enemy.update(dt, self.world)
+            enemy.update(dt, self.world, player)
+        # Drop loot с мёртвых ПЕРЕД удалением
+        self._drop_loot_from_dead(player)
         # Чистим мёртвых
         self.enemies = [e for e in self.enemies if not e.is_dead()]
 
@@ -177,7 +182,8 @@ class EnemyManager:
 
     def apply_player_attack(self, attack_id: int,
                             attack_rects: List[pygame.Rect],
-                            damage: int) -> Tuple[int, int]:
+                            damage: int,
+                            player=None) -> Tuple[int, int]:
         """Нанести урон врагам, которых задевают зоны атаки.
 
         attack_id - уникальный идентификатор текущей атаки игрока,
@@ -191,6 +197,8 @@ class EnemyManager:
 
         hits = 0
         kills = 0
+        kb_speed = get_config('COMBAT_ENEMY_KNOCKBACK_SPEED', 180)
+        kb_dur = get_config('COMBAT_ENEMY_KNOCKBACK_DURATION', 0.12)
 
         for enemy in self.enemies:
             if enemy.is_dead():
@@ -203,6 +211,16 @@ class EnemyManager:
                 if r.colliderect(enemy.rect):
                     enemy.take_damage(damage)
                     enemy.last_hit_attack_id = attack_id
+                    # Knockback от игрока
+                    if player is not None:
+                        dx = enemy.x - player.x
+                        dy = enemy.y - player.y
+                        dist = math.hypot(dx, dy)
+                        if dist < 1:
+                            dx, dy, dist = 0, -1, 1
+                        enemy.knockback_vx = (dx / dist) * kb_speed
+                        enemy.knockback_vy = (dy / dist) * kb_speed
+                        enemy.knockback_timer = kb_dur
                     hits += 1
                     if enemy.is_dead():
                         kills += 1
@@ -215,28 +233,46 @@ class EnemyManager:
     def apply_contact_damage(self, player) -> int:
         """Проверить пересечение живых врагов с игроком и нанести контактный урон.
 
-        Урон берётся из enemy.stats.damage. Каждый кадр каждый пересекающийся
-        враг наносит урон (но player.damage_cooldown ограничивает частоту
-        получения урона от окружения - по аналогии с болотом/песком).
+        Использует i-frames из PlayerStats: если игрок неуязвим — урон не наносится.
+        Враг имеет свой attack_cooldown — не бьёт чаще чем раз в N секунд.
+        При попадании: knockback игрока + retreat (отскок) врага.
 
         Возвращает суммарный нанесённый урон за этот кадр.
         """
-        total_damage = 0
-        current_time = pygame.time.get_ticks()
-
-        # Проверяем cooldown на стороне игрока (чтобы не дамажило каждый кадр)
-        if current_time - player.last_damage_time < player.damage_cooldown:
+        # i-frames check (делегируем PlayerStats)
+        if player.is_invulnerable:
             return 0
 
+        atk_cd = get_config('COMBAT_ENEMY_ATTACK_COOLDOWN', 1.2)
+        retreat_speed = get_config('COMBAT_ENEMY_RETREAT_SPEED', 150)
+        retreat_dur = get_config('COMBAT_ENEMY_RETREAT_DURATION', 0.2)
+
+        total_damage = 0
         for enemy in self.enemies:
             if enemy.is_dead():
                 continue
+            # Враг на кулдауне — не бьёт
+            if enemy.attack_cooldown_timer > 0:
+                continue
             if enemy.rect.colliderect(player.rect):
                 dmg = enemy.stats.damage
-                player.take_damage(dmg)
-                player.last_damage_time = current_time
-                total_damage += dmg
-                break  # один кадр = один удар (первый враг в списке)
+                hit = player.take_damage(dmg)
+                if hit:
+                    # Knockback игрока от врага
+                    player.apply_knockback(enemy.x, enemy.y)
+                    # Retreat врага от игрока (отскок назад)
+                    dx = enemy.x - player.x
+                    dy = enemy.y - player.y
+                    dist = math.hypot(dx, dy)
+                    if dist < 1:
+                        dx, dy, dist = 0, -1, 1
+                    enemy.knockback_vx = (dx / dist) * retreat_speed
+                    enemy.knockback_vy = (dy / dist) * retreat_speed
+                    enemy.knockback_timer = retreat_dur
+                    # Attack cooldown — враг не бьёт снова N секунд
+                    enemy.attack_cooldown_timer = atk_cd
+                    total_damage += dmg
+                break  # один кадр = один удар
 
         return total_damage
 
@@ -245,6 +281,67 @@ class EnemyManager:
     def draw(self, screen: pygame.Surface, camera_x: float, camera_y: float) -> None:
         for enemy in self.enemies:
             enemy.draw(screen, camera_x, camera_y)
+
+    # --- Drop loot ---------------------------------------------------------
+
+    def _drop_loot_from_dead(self, player=None) -> None:
+        """Спавнить пикапы с каждого только-что-умершего врага."""
+        if self.pickup_manager is None:
+            return
+        for enemy in self.enemies:
+            if not enemy.is_dead():
+                continue
+            # Уже дропнули? (помечаем атрибутом чтобы не дублировать)
+            if getattr(enemy, '_loot_dropped', False):
+                continue
+            enemy._loot_dropped = True
+            self._spawn_drops_for(enemy, player)
+
+    def _spawn_drops_for(self, enemy, player=None) -> None:
+        """Адаптивный дроп:
+        - XP — всегда.
+        - Сердечки — только если HP игрока неполное (по шансу).
+        - Монеты — только если HP игрока полное (по шансу).
+        Это создаёт интуитивную петлю: раненый игрок получает хил,
+        здоровый — копит золото.
+        """
+        prefix = enemy.stats.name.lower()  # light / heavy / fast
+        cx, cy = enemy.x, enemy.y
+
+        # XP — всегда (фиксированное количество)
+        xp_amount = get_config(f'DROPS_{prefix.upper()}_XP_AMOUNT', 0)
+        if xp_amount > 0:
+            self.pickup_manager.spawn(
+                XPOrbPickup(cx + random.uniform(-8, 8),
+                            cy + random.uniform(-8, 8))
+            )
+
+        # Определяем что дропать: сердечки или монеты
+        player_needs_heal = (
+            player is not None
+            and player.health < player.max_health
+        )
+
+        if player_needs_heal:
+            # Сердечко — шанс (только при неполном HP)
+            heart_chance = get_config(f'DROPS_{prefix.upper()}_HEART_CHANCE', 0.0)
+            if random.random() < heart_chance:
+                self.pickup_manager.spawn(
+                    HeartPickup(cx + random.uniform(-8, 8),
+                                cy + random.uniform(-8, 8))
+                )
+        else:
+            # Монеты — шанс + случайное количество (только при полном HP)
+            coin_chance = get_config(f'DROPS_{prefix.upper()}_COIN_CHANCE', 0.0)
+            if random.random() < coin_chance:
+                coin_min = get_config(f'DROPS_{prefix.upper()}_COIN_MIN', 1)
+                coin_max = get_config(f'DROPS_{prefix.upper()}_COIN_MAX', 1)
+                count = random.randint(coin_min, coin_max)
+                for _ in range(count):
+                    self.pickup_manager.spawn(
+                        CoinPickup(cx + random.uniform(-12, 12),
+                                   cy + random.uniform(-12, 12))
+                    )
 
     # --- Утилиты -----------------------------------------------------------
 
