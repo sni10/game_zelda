@@ -200,6 +200,166 @@ class OverlayRenderStrategy(LayerRenderStrategy):
         return (0, 150, 0)  # Зеленый для травы
 
 
+class HillRenderStrategy(LayerRenderStrategy):
+    """Стратегия рендеринга холмов с подземными участками"""
+    
+    def __init__(self, player_entity=None):
+        self.player_entity = player_entity
+    
+    def render(self, entity: Entity, screen: pygame.Surface, camera_offset: Tuple[float, float]):
+        """Рендеринг холмов с механикой нор"""
+        pos_comp = entity.get_component(PositionComponent)
+        layer_comp = entity.get_component(RenderLayerComponent)
+        
+        if not pos_comp or not layer_comp:
+            return
+            
+        # Вычисляем позицию на экране
+        screen_x = int(pos_comp.x - camera_offset[0])
+        screen_y = int(pos_comp.y - camera_offset[1])
+        size = 32
+        
+        # Проверяем компоненты burrow mechanics
+        from src.components.burrow_components import (
+            HillSurfaceComponent, 
+            UndergroundMovementComponent,
+            BurrowEntranceComponent,
+            BurrowExitComponent
+        )
+        
+        # Рендеринг поверхности холма
+        if entity.has_component(HillSurfaceComponent):
+            self._render_hill_surface(screen, screen_x, screen_y, size, entity, layer_comp)
+        
+        # Рендеринг подземной тропинки (если игрок под землей)
+        if self._should_render_underground_path(entity):
+            self._render_underground_path(screen, screen_x, screen_y, size, entity, layer_comp)
+        
+        # Рендеринг входов/выходов из нор
+        if entity.has_component(BurrowEntranceComponent):
+            self._render_burrow_entrance(screen, screen_x, screen_y, size, entity, layer_comp)
+        elif entity.has_component(BurrowExitComponent):
+            self._render_burrow_exit(screen, screen_x, screen_y, size, entity, layer_comp)
+    
+    def get_render_priority(self) -> int:
+        return 2  # Высокий приоритет для правильного наложения
+    
+    def _render_hill_surface(self, screen, x, y, size, entity, layer_comp):
+        """Рендеринг поверхности холма"""
+        if not layer_comp.visible or layer_comp.alpha <= 0:
+            return
+            
+        # Создаем поверхность холма с альфа-каналом для прозрачности
+        hill_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        
+        # Определяем прозрачность в зависимости от того, находится ли игрок под холмом
+        alpha = layer_comp.alpha
+        if self._is_player_underground_here(entity):
+            alpha = min(alpha, 180)  # Делаем холм полупрозрачным если игрок под ним
+        
+        hill_surface.fill((34, 139, 34, alpha))  # Зеленый с прозрачностью
+        screen.blit(hill_surface, (x, y))
+        
+        # Добавляем границу холма
+        pygame.draw.rect(screen, (0, 100, 0), (x, y, size, size), 2)
+    
+    def _render_underground_path(self, screen, x, y, size, entity, layer_comp):
+        """Рендеринг подземной тропинки"""
+        if not layer_comp.visible or layer_comp.alpha <= 0:
+            return
+            
+        # Рисуем тропинку как пунктирную линию
+        path_color = (101, 67, 33, min(layer_comp.alpha, 200))  # Темно-коричневый
+        
+        # Создаем поверхность для тропинки
+        path_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        path_surface.fill(path_color)
+        screen.blit(path_surface, (x, y))
+        
+        # Добавляем пунктирную границу для эффекта тропинки
+        for i in range(0, size, 8):
+            pygame.draw.rect(screen, (80, 50, 20), (x + i, y, 4, size), 1)
+            pygame.draw.rect(screen, (80, 50, 20), (x, y + i, size, 4), 1)
+    
+    def _render_burrow_entrance(self, screen, x, y, size, entity, layer_comp):
+        """Рендеринг входа в нору"""
+        if not layer_comp.visible or layer_comp.alpha <= 0:
+            return
+            
+        # Рисуем вход как темный круг
+        center_x = x + size // 2
+        center_y = y + size // 2
+        radius = size // 3
+        
+        entrance_color = (139, 69, 19)  # Коричневый
+        pygame.draw.circle(screen, entrance_color, (center_x, center_y), radius)
+        pygame.draw.circle(screen, (60, 30, 10), (center_x, center_y), radius, 3)  # Темная граница
+        
+        # Добавляем индикатор активности
+        from src.components.burrow_components import BurrowEntranceComponent
+        entrance_comp = entity.get_component(BurrowEntranceComponent)
+        if entrance_comp and entrance_comp.is_active:
+            # Мигающий эффект для активного входа
+            import time
+            if int(time.time() * 2) % 2:  # Мигание каждые 0.5 секунды
+                pygame.draw.circle(screen, (255, 255, 0), (center_x, center_y), radius + 2, 2)
+    
+    def _render_burrow_exit(self, screen, x, y, size, entity, layer_comp):
+        """Рендеринг выхода из норы"""
+        if not layer_comp.visible or layer_comp.alpha <= 0:
+            return
+            
+        # Рисуем выход как светлый круг
+        center_x = x + size // 2
+        center_y = y + size // 2
+        radius = size // 3
+        
+        exit_color = (160, 82, 45)  # Светло-коричневый
+        pygame.draw.circle(screen, exit_color, (center_x, center_y), radius)
+        pygame.draw.circle(screen, (100, 50, 25), (center_x, center_y), radius, 3)  # Граница
+        
+        # Добавляем световой эффект для выхода
+        light_color = (255, 255, 200, 100)  # Желтоватый свет
+        light_surface = pygame.Surface((size + 8, size + 8), pygame.SRCALPHA)
+        pygame.draw.circle(light_surface, light_color, (size // 2 + 4, size // 2 + 4), radius + 4)
+        screen.blit(light_surface, (x - 4, y - 4))
+    
+    def _should_render_underground_path(self, entity):
+        """Определить, нужно ли рендерить подземную тропинку"""
+        from src.components.burrow_components import UndergroundMovementComponent
+        
+        # Рендерим тропинку только если игрок находится под землей
+        if self.player_entity:
+            underground_comp = self.player_entity.get_component(UndergroundMovementComponent)
+            return underground_comp and underground_comp.is_underground
+        return False
+    
+    def _is_player_underground_here(self, entity):
+        """Проверить, находится ли игрок под землей в этой области"""
+        if not self.player_entity:
+            return False
+            
+        from src.components.burrow_components import UndergroundMovementComponent
+        underground_comp = self.player_entity.get_component(UndergroundMovementComponent)
+        
+        if not underground_comp or not underground_comp.is_underground:
+            return False
+            
+        # Проверяем, находится ли игрок рядом с этим холмом
+        player_pos = self.player_entity.get_component(PositionComponent)
+        entity_pos = entity.get_component(PositionComponent)
+        
+        if player_pos and entity_pos:
+            distance = ((player_pos.x - entity_pos.x) ** 2 + (player_pos.y - entity_pos.y) ** 2) ** 0.5
+            return distance <= 64  # Радиус влияния холма
+        
+        return False
+    
+    def set_player_entity(self, player_entity):
+        """Установить сущность игрока для отслеживания состояния"""
+        self.player_entity = player_entity
+
+
 class StrategyFactory:
     """Фабрика для создания стратегий рендеринга"""
     
