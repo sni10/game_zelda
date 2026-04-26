@@ -111,7 +111,12 @@ jobs:
           # Хронологический порядок (старые сначала), без merge-коммитов.
           # %B = full body, разделитель NULL чтобы не порвать многострочные.
           while IFS= read -r -d '' COMMIT_MSG; do
-            SUBJECT=$(echo "$COMMIT_MSG" | head -n1)
+            # NB: git log --pretty=format:'%B%x00' inserts an inter-record '\n'
+            # between entries, so from the 2nd commit onwards $COMMIT_MSG starts
+            # with an empty line. `head -n1` would then return "" and every
+            # commit after the first would silently fall into [SKIP].
+            # Use the first NON-EMPTY line as the subject instead.
+            SUBJECT=$(echo "$COMMIT_MSG" | awk 'NF{print; exit}')
 
             # 0) Явная форс-версия: "Release-As: 1.2.3" в теле.
             #    Перебивает всё (последняя по списку выигрывает).
