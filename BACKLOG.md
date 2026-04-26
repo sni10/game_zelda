@@ -14,13 +14,13 @@
 
 ### 🔴 Сохранения работают наполовину
 **Где:** `src/systems/save_system.py`, `src/core/game.py`
-- [ ] Меню «Загрузить игру» — заглушка: `load_game` вызывает `start_new_game()` и затирает прогресс
-- [ ] Мёртвая строка `save_system.py:138` — артефакт после рефакторинга `Player → PlayerStats` (`player.stats._stats = player.stats`)
-- [ ] F9 не восстанавливает текущее оружие и `current_weapon_index`
-- [ ] F9 не восстанавливает живых врагов (они респавнятся заново)
-- [ ] F9 не восстанавливает лежащие на земле пикапы (монеты, аптечки, XP)
-- [ ] F9 не восстанавливает `GameStats` (kills/distance/playtime обнуляются)
-- [ ] Нет валидации схемы JSON при загрузке — порченный файл может крашнуть игру
+- [x] Меню «Загрузить игру» — теперь вызывает `quickload()` (вместо затирающего прогресс `start_new_game()`)
+- [x] Убрана мёртвая строка `save_system.py:138` (артефакт рефакторинга `Player → PlayerStats`)
+- [x] F9 восстанавливает `current_weapon_index` (и `iframe_timer`)
+- [x] F9 восстанавливает живых врагов (тип/HP/позиция/cooldown) через `EnemyManager.serialize/deserialize`
+- [x] F9 восстанавливает лежащие пикапы через `PickupManager.serialize/deserialize`
+- [x] F9 восстанавливает `GameStats` через `GameStats.to_dict/from_dict` (вкл. play_time)
+- [x] Валидация схемы JSON при загрузке (`SaveValidationError`) — порченный файл возвращает `None` без краша
 
 ### 🟡 Прочее
 - [ ] При смерти игрока статистика на Game Over screen иногда показывает дублирующиеся записи (требует воспроизведения)
@@ -45,36 +45,61 @@
 
 ## 💾 SAVE/LOAD SYSTEM — отдельный эпик
 
-### 🔴 v0.3.1 — фикс существующего F9
-1. Убрать мёртвую строку `save_system.py:138`
-2. Сериализовать: `current_weapon_index`, `iframe_timer` (опц.)
-3. `EnemyManager.serialize()` / `deserialize()` — сохранять живых врагов с HP/позицией
-4. `PickupManager.serialize()` / `deserialize()` — сохранять лежащие пикапы
-5. `GameStats.to_dict()` / `from_dict()` — полное восстановление статистики
-6. Тесты round-trip: `save → load → assert state equals`
+### ✅ v0.3.1 — фикс существующего F9 (сделано)
+1. [x] Убрана мёртвая строка `save_system.py:138`
+2. [x] Сериализация `current_weapon_index` и `iframe_timer`
+3. [x] `EnemyManager.serialize()` / `deserialize()` — живые враги с HP/позицией/cooldown + `target_counts`
+4. [x] `PickupManager.serialize()` / `deserialize()` — лежащие пикапы (тип/x/y/lifetime)
+5. [x] `GameStats.to_dict()` / `from_dict()` / `apply_dict()` — полное восстановление статистики (вкл. play_time)
+6. [x] Валидация JSON-схемы (`_validate_save_data` + `SaveValidationError`)
+7. [x] Round-trip тесты: `tests/unit/test_save_system_roundtrip.py` (8 тестов, вкл. legacy v1.0)
 
-### 🟡 v0.3.2 — UI слотов
-1. `SaveSystem.list_saves()` — список с метаданными (timestamp, level, playtime, hp)
-2. Новый класс `src/ui/load_menu.py` — список слотов с навигацией ↑↓, Enter, Del, Esc
-3. Новое состояние `GameState.LOAD_MENU`
-4. F6 = save в новый слот с timestamp; F5 = quicksave (как сейчас)
-5. Превью миникарты в слоте (опц.)
+### ✅ v0.3.2 — UI слотов (сделано)
 
-### 🟢 v0.3.3 — Автосейв
-- Раз в N минут (config) или при значимых событиях (level-up, смена зоны)
-- Отдельный файл `autosave.json`, виден в меню как «🕐 Автосохранение»
-- Лимит N автосейвов с ротацией
+**Два типа сохранений (раздельно, не пересекаются):**
+- **Quicksave (F5/F9)** — один файл `saves/quicksave.json`. Без подтверждений, без меню.
+- **Manual saves (F6 + меню)** — до **10** слотов в `saves/manual/slot_01..10.json`. Создаются и загружаются только через меню.
+
+**Реализация:**
+1. [x] `SaveSystem.list_manual_saves()` — список manual-слотов с метаданными (timestamp, level, play_time, hp/max_hp, valid). Quicksave доступен отдельно через `get_quicksave_metadata()`.
+2. [x] `src/ui/save_load_menu.py` — единый класс `SaveLoadMenu` с двумя режимами `MODE_LOAD`/`MODE_SAVE` (навигация ↑↓, Enter, Del, Esc, модалки overwrite/delete).
+3. [x] Новые состояния `GameState.LOAD_MENU` и `GameState.SAVE_MENU`.
+4. [x] **F5** = quicksave, **F9** = quickload (без изменений).
+5. [x] **F6** = открыть SAVE_MENU; «Загрузить игру» из главного меню → LOAD_MENU со списком (quicksave-строка сверху, если есть, + manual-слоты).
+6. [x] Лимит 10 manual-слотов; `save_to_slot` вне диапазона возвращает `False`.
+7. [x] Подтверждение перезаписи занятого manual-слота (Y/N модалка); quicksave перезаписывается без подтверждения.
+8. [x] Подтверждение удаления (Del → Y/N); quicksave удалить нельзя.
+9. [ ] Превью миникарты в слоте (опц., отложено).
+
+### ✅ v0.3.3 — Автосейв (сделано)
+
+**Конфиг (`[autosave]` в `config.ini`):**
+- `autosave_enabled` (default `true`) — глобальный выключатель.
+- `autosave_interval_minutes` (default `5.0`) — интервал периодического автосейва.
+- `autosave_limit` (default `3`) — максимум хранимых автосейвов, дальше ротация по mtime.
+- `autosave_on_level_up` (default `true`) — отдельный триггер на level-up.
+
+**Реализация:**
+1. [x] `SaveSystem.autosave(player, world, ..., reason, limit)` — пишет в `saves/autosave/autosave_NN.json` с автоматическим выбором свободного слота (либо самого старого по mtime).
+2. [x] `list_autosaves()` (свежие сверху) / `get_latest_autosave_metadata()` / `load_from_autosave(slot_id)` / `delete_autosave(slot_id)`.
+3. [x] Поле `autosave_reason` в save_data → отображается в UI как «`(periodic)`», «`(level_up)`», ...
+4. [x] Game: `_update_autosave(dt)` тикает таймер, ловит level-up по `player.level`, сбрасывается на `start_new_game`/`quickload`/`_apply_loaded_save_data`.
+5. [x] `Game.trigger_autosave(reason)` — публичная точка для будущих триггеров (смена зоны и т.п.).
+6. [x] `SaveLoadMenu.refresh()` подкладывает автосейвы в LOAD_MENU между quicksave и manual-слотами с лейблом «🕐 Автосохранение #NN (reason)».
+7. [x] Enter в LOAD_MENU → `load_autosave`; Del → `delete_autosave` (через ту же модалку Y/N, что у manual).
+8. [x] `MainMenu.has_saves()` теперь учитывает `saves/autosave/`.
+9. [x] Тесты: `tests/unit/test_autosave.py` (10) — round-trip, ротация, сортировка, ротация по уменьшению лимита, удаление, has_saves; +3 UI-теста в `test_save_load_menu.py` (entries / Enter / Del-модалка для autosave).
 
 ---
 
 ## ✨ FEATURES — что добавлять
 
 ### 🟡 Близкое (v0.4.x)
-- [ ] **Расширение оружия:** дальние (лук с реальными снарядами), магия, комбо, заряженные удары
+- [ ] **Расширение оружия:** дальние (ствол с реальными снарядами),  заряженные удары - альтернативная стрельба
 - [ ] **Инвентарь** и экран персонажа (`I`-key)
 - [ ] **Магазин/торговец** — потратить накопленные монеты
-- [ ] **Зелья** (HP, скорость, временный buff урона)
-- [ ] **Больше типов врагов** (5+): дальник-лучник, маг, танк, стая, мини-босс
+- [ ] **бустеры** (HP, скорость, броня, урон)
+- [ ] **Больше типов врагов** (5+): дальник-стрелок, чужой, чужой-боец, стая, мини-босс тяжелый
 - [ ] **Sprite-анимация игрока** (4-8 кадров на направление) — заменить зелёный квадрат
 
 ### 🟢 Дальнее (v0.5+)
@@ -121,9 +146,9 @@
 
 | Версия | Тема | Что войдёт |
 |--------|------|-----------|
-| **v0.3.1** | Save/Load fix | Bug fixes из эпика «v0.3.1 — фикс F9» |
-| **v0.3.2** | Save/Load UI | Слоты, меню загрузки, F6 |
-| **v0.3.3** | Autosave | Автосейвы + ротация |
+| ✅ **v0.3.1** | Save/Load fix | Bug fixes из эпика «v0.3.1 — фикс F9» — **сделано** |
+| ✅ **v0.3.2** | Save/Load UI | Слоты (10 manual + quicksave), LOAD/SAVE меню, F6 — **сделано** |
+| ✅ **v0.3.3** | Autosave | Автосейвы (периодика + level-up) с ротацией по `autosave_limit` — **сделано** |
 | **v0.4.0** | Inventory | Инвентарь, магазин, зелья |
 | **v0.5.0** | Combat depth | Дальние оружия, магия, комбо, новые враги |
 | **v0.6.0** | Audio + Sprites | Звук, музыка, анимация спрайтов |
@@ -131,6 +156,6 @@
 
 ---
 
-**Последнее обновление:** 2026-04-26
-**Сопровождает:** `REFACTOR_PLAN.md` (выполненные шаги), `docs/release-notes/` (история релизов)
+**Последнее обновление:** 2026-04-27
+**Сопровождает:** `REFACTOR_PLAN.md` (выполненные шаги)
 

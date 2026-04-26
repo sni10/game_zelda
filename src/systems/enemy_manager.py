@@ -358,3 +358,46 @@ class EnemyManager:
                 result[tid] = result.get(tid, 0) + 1
         return result
 
+    # --- Сериализация ------------------------------------------------------
+
+    def serialize(self) -> dict:
+        """Сохранить живых врагов с HP/позицией + target_counts для респавна."""
+        enemies_data = []
+        for e in self.enemies:
+            if e.is_dead():
+                continue
+            enemies_data.append({
+                "type": e.stats.name.lower(),  # 'light' / 'heavy' / 'fast'
+                "x": float(e.x),
+                "y": float(e.y),
+                "health": int(e.health),
+                "attack_cooldown_timer": float(e.attack_cooldown_timer),
+            })
+        return {
+            "enemies": enemies_data,
+            "target_counts": dict(self.target_counts),
+            "respawn_timer": float(self._respawn_timer),
+        }
+
+    def deserialize(self, data: dict) -> None:
+        """Восстановить врагов и параметры респавна (заменяет текущих)."""
+        self.enemies = []
+        if not data:
+            return
+        for item in data.get("enemies", []):
+            type_id = item.get("type")
+            x = float(item.get("x", 0))
+            y = float(item.get("y", 0))
+            cx = x + self.TILE_SIZE / 2
+            cy = y + self.TILE_SIZE / 2
+            patrol_zone = self._make_patrol_zone(cx, cy)
+            try:
+                enemy = EnemyFactory.create(type_id, x, y, patrol_zone)
+            except Exception:
+                continue
+            enemy.health = int(item.get("health", enemy.stats.max_health))
+            enemy.attack_cooldown_timer = float(item.get("attack_cooldown_timer", 0))
+            self.enemies.append(enemy)
+        self.target_counts = dict(data.get("target_counts", {}))
+        self._respawn_timer = float(data.get("respawn_timer", 0.0))
+
