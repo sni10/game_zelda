@@ -434,11 +434,13 @@ class TestPlayer:
         self.player.take_damage(damage)
         assert self.player.health == initial_health - damage
         
-        # Take more damage
+        # Take more damage (reset iframe to allow second hit)
+        self.player._stats.iframe_timer = 0
         self.player.take_damage(30)
         assert self.player.health == initial_health - damage - 30
         
         # Take massive damage - health should not go below 0
+        self.player._stats.iframe_timer = 0
         self.player.take_damage(1000)
         assert self.player.health == 0
         

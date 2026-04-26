@@ -1,7 +1,8 @@
 """
 HUD - класс отображения пользовательского интерфейса в игре.
 
-Single Responsibility: рисовать UI поверх игрового мира (полоса HP, слоты оружий).
+Single Responsibility: рисовать UI поверх игрового мира (полоса HP, слоты оружий,
+монеты, уровень, полоска XP).
 Не знает про игровой цикл, ввод или мир — только про player и screen.
 """
 import pygame
@@ -10,22 +11,27 @@ from src.core.config_loader import get_color
 
 
 class HUD:
-    """Head-Up Display: полоса здоровья + слоты оружий + (в будущем) другие элементы."""
+    """Head-Up Display: полоса здоровья + слоты оружий + монеты + level/XP."""
 
     def __init__(self):
         # Шрифты создаются один раз — pygame.font.Font дорогой по инициализации
         self._font_pct = pygame.font.Font(None, 24)
         self._font_digit = pygame.font.Font(None, 20)
         self._font_name = pygame.font.Font(None, 22)
+        self._font_coins = pygame.font.Font(None, 26)
+        self._font_level = pygame.font.Font(None, 22)
 
     # --- Публичный API ----------------------------------------------------
 
     def draw(self, screen: pygame.Surface, player) -> None:
-        """Отрисовать весь HUD. player должен иметь .health, .max_health, .weapons, .current_weapon_index."""
+        """Отрисовать весь HUD."""
         if player is None:
             return
         self._draw_health_bar(screen, player)
+        self._draw_xp_bar(screen, player)
+        self._draw_level_badge(screen, player)
         self._draw_weapon_slots(screen, player)
+        self._draw_coins(screen, player)
 
     # --- Внутренние методы рендера ---------------------------------------
 
@@ -52,19 +58,40 @@ class HUD:
              bar_width + border_width * 2, bar_height + border_width * 2),
             border_width,
         )
-        # Текст в процентах
-        pct_display = int(round(pct * 100))
-        text_surf = self._font_pct.render(f"{pct_display}%", True, get_color('WHITE'))
+        # Текст HP
+        hp_text = f"{player.health}/{player.max_health}"
+        text_surf = self._font_pct.render(hp_text, True, get_color('WHITE'))
         screen.blit(
             text_surf,
             (bar_x + bar_width + 10,
              bar_y + (bar_height - text_surf.get_height()) // 2),
         )
 
+    def _draw_xp_bar(self, screen: pygame.Surface, player) -> None:
+        """Тонкая полоска XP под полоской здоровья."""
+        bar_x, bar_y = 10, 33
+        bar_width, bar_height = 200, 5
+
+        stats = player.stats
+        xp_next = stats.xp_to_next_level
+        pct = stats.xp / xp_next if xp_next > 0 else 0
+        fill_w = int(bar_width * min(pct, 1.0))
+
+        pygame.draw.rect(screen, (30, 30, 60), (bar_x, bar_y, bar_width, bar_height))
+        if fill_w > 0:
+            pygame.draw.rect(screen, (80, 180, 255), (bar_x, bar_y, fill_w, bar_height))
+
+    def _draw_level_badge(self, screen: pygame.Surface, player) -> None:
+        """Уровень игрока слева от HP-бара."""
+        text = f"Lv.{player.level}"
+        surf = self._font_level.render(text, True, (200, 200, 255))
+        # Справа от HP текста (с запасом)
+        screen.blit(surf, (310, 12))
+
     def _draw_weapon_slots(self, screen: pygame.Surface, player) -> None:
         """Слоты оружий с подсветкой активного — под полоской здоровья."""
         slot_size, gap = 36, 6
-        start_x, start_y = 10, 40
+        start_x, start_y = 10, 46
 
         for i, weapon in enumerate(player.weapons):
             slot_x = start_x + i * (slot_size + gap)
@@ -87,3 +114,11 @@ class HUD:
         name_surf = self._font_name.render(active.name, True, get_color('WHITE'))
         screen.blit(name_surf, (start_x, start_y + slot_size + 4))
 
+    def _draw_coins(self, screen: pygame.Surface, player) -> None:
+        """Счётчик монет в правом верхнем углу (ниже миникарты)."""
+        coins = player.coins
+        text = f"$ {coins}"
+        surf = self._font_coins.render(text, True, (255, 220, 50))
+        x = screen.get_width() - 170
+        y = 170  # Под миникартой
+        screen.blit(surf, (x, y))

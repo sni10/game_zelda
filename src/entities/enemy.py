@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Tuple
 import pygame
 from src.core.config_loader import get_config
-from src.entities.enemy_ai import AIBehavior, PatrolBehavior
+from src.entities.enemy_ai import AIBehavior, PatrolBehavior, ChaseBehavior
 @dataclass
 class EnemyStats:
     """Статы одного типа врага. Берутся из config.ini."""
@@ -42,15 +42,57 @@ class Enemy:
         # Время последнего попадания - для flash-эффекта
         self.last_hit_time = 0
         self.HIT_FLASH_DURATION_MS = 100
+        # Knockback state
+        self.knockback_vx = 0.0
+        self.knockback_vy = 0.0
+        self.knockback_timer = 0.0
+        # Attack cooldown — после удара враг не может бить N секунд
+        self.attack_cooldown_timer = 0.0
+        # Флаг: враг вплотную к игроку (позиция откачена из-за коллизии)
+        self.touching_player = False
     def take_damage(self, amount: int) -> None:
         self.health = max(0, self.health - amount)
         self.last_hit_time = pygame.time.get_ticks()
     def is_dead(self) -> bool:
         return self.health <= 0
-    def update(self, dt: float, world) -> None:
+    def update(self, dt: float, world, player=None) -> None:
         if self.is_dead():
             return
-        self.ai.update(self, dt, world)
+        # Тик attack cooldown
+        if self.attack_cooldown_timer > 0:
+            self.attack_cooldown_timer = max(0.0, self.attack_cooldown_timer - dt)
+        # Запоминаем позицию до движения
+        old_x, old_y = self.x, self.y
+        # Knockback приоритетнее AI
+        if self.knockback_timer > 0:
+            self.knockback_timer -= dt
+            new_x = self.x + self.knockback_vx * dt
+            new_y = self.y + self.knockback_vy * dt
+            import pygame as _pg
+            candidate = _pg.Rect(int(new_x), int(new_y),
+                                 self.rect.width, self.rect.height)
+            blocked = (world is not None and world.check_collision(candidate))
+            if not blocked and player is not None:
+                blocked = candidate.colliderect(player.rect)
+            if not blocked:
+                self.x = new_x
+                self.y = new_y
+                self.rect.x = int(new_x)
+                self.rect.y = int(new_y)
+            if self.knockback_timer <= 0:
+                self.knockback_vx = 0.0
+                self.knockback_vy = 0.0
+            return
+        self.ai.update(self, dt, world, player)
+        # После AI: не допускаем пересечения с хитбоксом игрока
+        if player is not None and self.rect.colliderect(player.rect):
+            self.x = old_x
+            self.y = old_y
+            self.rect.x = int(old_x)
+            self.rect.y = int(old_y)
+            self.touching_player = True
+        else:
+            self.touching_player = False
     def draw(self, screen, camera_x, camera_y) -> None:
         if self.is_dead():
             return
@@ -99,25 +141,37 @@ class LightEnemy(Enemy):
     TYPE_ID = 'light'
     @classmethod
     def create(cls, x, y, patrol_zone) -> 'LightEnemy':
+        chase_r = get_config('ENEMIES_LIGHT_CHASE_RADIUS', 120)
+        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
+        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
+                           patrol_fallback=PatrolBehavior())
         return cls(x, y,
                    stats=_stats_from_config('LIGHT', 'Light'),
-                   ai=PatrolBehavior(),
+                   ai=ai,
                    patrol_zone=patrol_zone)
 class HeavyEnemy(Enemy):
     """Тяжёлый враг: большой, медленный, 3 HP."""
     TYPE_ID = 'heavy'
     @classmethod
     def create(cls, x, y, patrol_zone) -> 'HeavyEnemy':
+        chase_r = get_config('ENEMIES_HEAVY_CHASE_RADIUS', 100)
+        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
+        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
+                           patrol_fallback=PatrolBehavior(repath_interval=3.0))
         return cls(x, y,
                    stats=_stats_from_config('HEAVY', 'Heavy'),
-                   ai=PatrolBehavior(repath_interval=3.0),
+                   ai=ai,
                    patrol_zone=patrol_zone)
 class FastEnemy(Enemy):
     """Быстрый враг: маленький, очень быстрый, 1 HP."""
     TYPE_ID = 'fast'
     @classmethod
     def create(cls, x, y, patrol_zone) -> 'FastEnemy':
+        chase_r = get_config('ENEMIES_FAST_CHASE_RADIUS', 180)
+        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
+        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
+                           patrol_fallback=PatrolBehavior(repath_interval=1.2))
         return cls(x, y,
                    stats=_stats_from_config('FAST', 'Fast'),
-                   ai=PatrolBehavior(repath_interval=1.2),
+                   ai=ai,
                    patrol_zone=patrol_zone)

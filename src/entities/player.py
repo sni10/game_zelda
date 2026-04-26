@@ -24,6 +24,8 @@ class Player:
         self.direction_x = 0
         self.direction_y = 0
         self.facing_direction = 'down'
+        # Были ли обе оси нажаты в прошлом кадре (для залочки диагонали)
+        self._prev_both_axes = False
 
         # Делегаты: здоровье и боевая система
         self._stats = PlayerStats(get_config('PLAYER_MAX_HEALTH'))
@@ -35,6 +37,13 @@ class Player:
 
         # Прямоугольник для коллизий
         self.rect = pygame.Rect(x, y, self.width, self.height)
+
+        # Knockback state
+        self.knockback_vx = 0.0
+        self.knockback_vy = 0.0
+        self.knockback_timer = 0.0
+        self._kb_duration = get_config('COMBAT_PLAYER_KNOCKBACK_DURATION', 0.15)
+        self._kb_speed = get_config('COMBAT_PLAYER_KNOCKBACK_SPEED', 220)
 
     # --- Backward-compatible API для здоровья (делегирует PlayerStats) ------
 
@@ -57,14 +66,50 @@ class Player:
     def is_dead(self):
         return self._stats.is_dead()
 
-    def take_damage(self, damage, game_stats=None):
-        self._stats.take_damage(damage, game_stats)
+    def take_damage(self, damage, game_stats=None, ignore_iframes=False):
+        return self._stats.take_damage(damage, game_stats, ignore_iframes=ignore_iframes)
 
     def heal(self, amount):
         self._stats.heal(amount)
 
     def get_health_percentage(self):
         return self._stats.get_health_percentage()
+
+    # Прогрессия
+    @property
+    def stats(self):
+        return self._stats
+
+    @property
+    def level(self):
+        return self._stats.level
+
+    @property
+    def xp(self):
+        return self._stats.xp
+
+    @property
+    def coins(self):
+        return self._stats.coins
+
+    @property
+    def damage_bonus(self):
+        return self._stats.damage_bonus
+
+    @property
+    def is_invulnerable(self):
+        return self._stats.is_invulnerable
+
+    def apply_knockback(self, from_x: float, from_y: float) -> None:
+        """Применить knockback от точки (from_x, from_y) к игроку."""
+        dx = self.x - from_x
+        dy = self.y - from_y
+        dist = math.hypot(dx, dy)
+        if dist < 1:
+            dx, dy, dist = 0, -1, 1  # дефолт - вверх
+        self.knockback_vx = (dx / dist) * self._kb_speed
+        self.knockback_vy = (dy / dist) * self._kb_speed
+        self.knockback_timer = self._kb_duration
 
     # --- Backward-compatible API для боя (делегирует PlayerCombat) ----------
 
@@ -145,6 +190,17 @@ class Player:
         except (KeyError, IndexError):
             return False
 
+    def _set_cardinal_facing(self):
+        """Установить кардинальное facing из текущего direction."""
+        if self.direction_x == -1:
+            self.facing_direction = 'left'
+        elif self.direction_x == 1:
+            self.facing_direction = 'right'
+        elif self.direction_y == -1:
+            self.facing_direction = 'up'
+        elif self.direction_y == 1:
+            self.facing_direction = 'down'
+
     def handle_input(self, keys):
         """Обработка ввода с клавиатуры"""
         # Сброс направления
@@ -167,25 +223,35 @@ class Player:
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.direction_y = 1
             
-        # Определяем направление взгляда на основе движения (8 направлений)
-        if self.direction_x != 0 or self.direction_y != 0:
+        # Определяем направление взгляда на основе движения (8 направлений).
+        # Логика:
+        #  - Обе оси нажаты → facing = диагональ (всегда)
+        #  - Одна ось нажата И в прошлом кадре были обе → "отпускание" → facing сохраняется
+        #  - Одна ось нажата И в прошлом кадре тоже одна → facing = кардинальное
+        #  - Ничего не нажато → facing сохраняется (можно бить стоя)
+        both_axes = (self.direction_x != 0 and self.direction_y != 0)
+
+        if both_axes:
+            # Чистая диагональ
             if self.direction_x == -1 and self.direction_y == -1:
                 self.facing_direction = 'up_left'
             elif self.direction_x == 1 and self.direction_y == -1:
                 self.facing_direction = 'up_right'
             elif self.direction_x == -1 and self.direction_y == 1:
                 self.facing_direction = 'down_left'
-            elif self.direction_x == 1 and self.direction_y == 1:
+            else:
                 self.facing_direction = 'down_right'
-            elif self.direction_x == -1:
-                self.facing_direction = 'left'
-            elif self.direction_x == 1:
-                self.facing_direction = 'right'
-            elif self.direction_y == -1:
-                self.facing_direction = 'up'
-            elif self.direction_y == 1:
-                self.facing_direction = 'down'
-            
+        elif self.direction_x != 0 or self.direction_y != 0:
+            # Одна ось нажата
+            if not self._prev_both_axes:
+                # В прошлом кадре тоже была одна ось (или ноль) → обновляем
+                self._set_cardinal_facing()
+            # Иначе: в прошлом кадре были обе → только что отпустили вторую
+            # клавишу → сохраняем диагональный facing (залочка на 1 кадр)
+        # Ничего не нажато → facing остаётся
+
+        self._prev_both_axes = both_axes
+
         # Нормализация диагонального движения
         if self.direction_x != 0 and self.direction_y != 0:
             self.direction_x *= 0.707  # 1/sqrt(2)
@@ -197,8 +263,29 @@ class Player:
 
     def update(self, dt, world, game_stats=None):
         """Обновление состояния игрока"""
+        # Тик i-frame таймера
+        self._stats.update(dt)
+
         # Обновление атаки
         self._combat.update_attack()
+
+        # Knockback приоритетнее ввода
+        if self.knockback_timer > 0:
+            self.knockback_timer -= dt
+            new_x = self.x + self.knockback_vx * dt
+            new_y = self.y + self.knockback_vy * dt
+            new_x = max(0, min(new_x, world.width - self.width))
+            new_y = max(0, min(new_y, world.height - self.height))
+            temp_rect = pygame.Rect(int(new_x), int(new_y), self.width, self.height)
+            if not world.check_collision(temp_rect):
+                self.x = new_x
+                self.y = new_y
+                self.rect.x = int(self.x)
+                self.rect.y = int(self.y)
+            if self.knockback_timer <= 0:
+                self.knockback_vx = 0.0
+                self.knockback_vy = 0.0
+            return
 
         # Движение
         if not self.attacking:
@@ -225,13 +312,22 @@ class Player:
                 if new_tile and new_tile.damages_player:
                     current_time = pygame.time.get_ticks()
                     if current_time - self.last_damage_time > self.damage_cooldown:
-                        self.take_damage(new_tile.damage_amount, game_stats)
+                        self.take_damage(new_tile.damage_amount, game_stats,
+                                        ignore_iframes=True)
                         self.last_damage_time = current_time
 
     # --- Отрисовка ---------------------------------------------------------
 
     def draw(self, screen, camera_x=0, camera_y=0):
         """Отрисовка игрока"""
+        # Мигание при i-frames (пропускаем каждый чётный кадр)
+        if self.is_invulnerable:
+            # ~10 миганий/сек при 60fps: пропускаем каждые 3 кадра
+            import time
+            if int(time.time() * 10) % 2 == 0:
+                # Рисуем полупрозрачно — skip кадра
+                return
+
         screen_x = int(self.x - camera_x)
         screen_y = int(self.y - camera_y)
         
