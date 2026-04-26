@@ -16,6 +16,7 @@ from src.core.game_stats import GameStats
 from src.ui.menu import MainMenu
 from src.ui.game_over import GameOverScreen
 from src.ui.hud import HUD
+from src.ui.save_load_menu import SaveLoadMenu
 from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
@@ -68,6 +69,16 @@ class Game:
         # Система сохранений
         self.save_system = SaveSystem()
 
+        # Меню слотов сохранений (load/save) — создаётся лениво, чтобы не
+        # инициализировать pygame.font раньше чем это понадобится. См. v0.3.2.
+        self.save_load_menu: SaveLoadMenu = None
+        # Куда возвращаться из SAVE_MENU: PLAYING (если открыт по F6) или MENU.
+        self._save_menu_return_state = GameState.PLAYING
+
+        # Автосейв (v0.3.3): таймер периодического сейва + детектор level-up.
+        self._autosave_timer = 0.0
+        self._last_known_level = None
+
     # --- Логирование -------------------------------------------------------
 
     def log(self, message, level="INFO"):
@@ -105,6 +116,10 @@ class Game:
                  f"(по типам: {self.world.enemy_manager.alive_by_type()})",
                  "IMPORTANT")
 
+        # Сброс автосейв-таймера и базовый уровень для детектора level-up
+        self._autosave_timer = 0.0
+        self._last_known_level = self.player.level
+
         # Статистика и Game Over экран
         self.game_stats = GameStats()
         self.game_over_screen = GameOverScreen(
@@ -113,7 +128,8 @@ class Game:
         self.hud = HUD()
 
         print("Игра запущена. WASD/стрелки - движение, Space - атака, "
-              "1..4 - оружие, F1 - debug, F5/F9 - save/load, ESC - меню")
+              "1..4 - оружие, F1 - debug, F5 - quicksave, F6 - save menu, "
+              "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
 
     # --- Обработка событий -------------------------------------------------
@@ -133,6 +149,8 @@ class Game:
                 self._handle_playing_key(event)
             elif self.state == GameState.GAME_OVER:
                 self._handle_game_over_key(event)
+            elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU):
+                self._handle_save_load_menu_key(event)
 
     def _handle_menu_key(self, event):
         action = self.menu.handle_input(event)
@@ -141,8 +159,8 @@ class Game:
         elif action == "continue_game":
             self.quickload()
         elif action == "load_game":
-            print("Load game - функция будет реализована позже")
-            self.start_new_game()
+            # v0.3.2 — открываем полноценное меню слотов
+            self._open_load_menu()
         elif action == "exit":
             self.running = False
 
@@ -151,6 +169,9 @@ class Game:
             self.show_debug = not self.show_debug
         elif event.key == pygame.K_F5:
             self.quicksave()
+        elif event.key == pygame.K_F6:
+            # v0.3.2 — выбор manual-слота для сохранения
+            self._open_save_menu()
         elif event.key == pygame.K_F9:
             self.quickload()
         elif event.key == pygame.K_ESCAPE:
@@ -167,6 +188,137 @@ class Game:
                         f"(reach={w.reach}, dmg={w.damage})",
                         "IMPORTANT",
                     )
+
+    def _ensure_save_load_menu(self, mode):
+        """Создать или переинициализировать SaveLoadMenu в нужном режиме."""
+        if self.save_load_menu is None:
+            self.save_load_menu = SaveLoadMenu(self.save_system, mode=mode)
+        else:
+            self.save_load_menu.set_mode(mode)
+        self.save_load_menu.refresh()
+
+    def _open_load_menu(self):
+        """Открыть меню загрузки. Доступно из главного меню."""
+        self._ensure_save_load_menu(SaveLoadMenu.MODE_LOAD)
+        # Из LOAD_MENU всегда возвращаемся в главное меню
+        self.state = GameState.LOAD_MENU
+
+    def _open_save_menu(self):
+        """Открыть меню сохранения (F6). Только во время игры."""
+        if not self.player or not self.world:
+            print("Нет активной игры для сохранения!")
+            return
+        self._ensure_save_load_menu(SaveLoadMenu.MODE_SAVE)
+        self._save_menu_return_state = GameState.PLAYING
+        self.state = GameState.SAVE_MENU
+
+    def _handle_save_load_menu_key(self, event):
+        if self.save_load_menu is None:
+            self.state = GameState.MENU
+            return
+        action = self.save_load_menu.handle_input(event)
+        if action is None:
+            return
+
+        atype = action.get("type")
+        if atype == "back":
+            if self.state == GameState.SAVE_MENU:
+                self.state = self._save_menu_return_state
+            else:
+                self.state = GameState.MENU
+            return
+
+        if atype == "load_quicksave":
+            self.quickload()
+            return
+
+        if atype == "load_slot":
+            slot_id = action["slot_id"]
+            save_data = self.save_system.load_from_slot(slot_id)
+            if save_data is None:
+                print(f"   ❌ Слот {slot_id}: ошибка загрузки")
+                self.save_load_menu.refresh()
+                return
+            self._apply_loaded_save_data(save_data)
+            print(f"   ✅ Загружен слот {slot_id}")
+            return
+
+        if atype == "save_slot":
+            slot_id = action["slot_id"]
+            ok = self.save_system.save_to_slot(
+                slot_id,
+                self.player,
+                self.world,
+                game_stats=self.game_stats,
+                pickup_manager=self.pickup_manager,
+                enemy_manager=self.world.enemy_manager,
+            )
+            print(f"   ✅ Сохранено в слот {slot_id}" if ok
+                  else f"   ❌ Ошибка сохранения в слот {slot_id}")
+            self.save_load_menu.refresh()
+            return
+
+        if atype == "delete_slot":
+            ok = self.save_system.delete_slot(action["slot_id"])
+            print(f"   🗑 Слот {action['slot_id']} удалён" if ok
+                  else f"   ❌ Не удалось удалить слот {action['slot_id']}")
+            self.save_load_menu.refresh()
+            return
+
+        if atype == "load_autosave":
+            slot_id = action["slot_id"]
+            save_data = self.save_system.load_from_autosave(slot_id)
+            if save_data is None:
+                print(f"   ❌ Автосейв {slot_id}: ошибка загрузки")
+                self.save_load_menu.refresh()
+                return
+            self._apply_loaded_save_data(save_data)
+            print(f"   ✅ Загружен автосейв {slot_id}")
+            return
+
+        if atype == "delete_autosave":
+            ok = self.save_system.delete_autosave(action["slot_id"])
+            print(f"   🗑 Автосейв {action['slot_id']} удалён" if ok
+                  else f"   ❌ Не удалось удалить автосейв {action['slot_id']}")
+            self.save_load_menu.refresh()
+            return
+
+    def _apply_loaded_save_data(self, save_data):
+        """Применить уже загруженные save_data к текущему состоянию игры.
+
+        Та же логика, что и в quickload(), но без чтения файла.
+        """
+        if not self.player or not self.world:
+            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.player = Player(0, 0)
+        if not self.pickup_manager:
+            self.pickup_manager = PickupManager()
+            self.world.enemy_manager.pickup_manager = self.pickup_manager
+        if not self.game_stats:
+            self.game_stats = GameStats()
+        if not self.game_over_screen:
+            self.game_over_screen = GameOverScreen(
+                get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
+            )
+        if not self.hud:
+            self.hud = HUD()
+
+        self.save_system.apply_save_data_to_player(self.player, save_data)
+        self.save_system.apply_save_data_to_world(self.world, save_data)
+        self.save_system.apply_save_data_to_enemies(
+            self.world.enemy_manager, save_data
+        )
+        self.save_system.apply_save_data_to_pickups(
+            self.pickup_manager, save_data
+        )
+        self.save_system.apply_save_data_to_game_stats(
+            self.game_stats, save_data
+        )
+        # Сброс автосейв-состояния под загруженного игрока, чтобы level-up
+        # триггер не сработал ложно сразу после загрузки.
+        self._autosave_timer = 0.0
+        self._last_known_level = self.player.level
+        self.state = GameState.PLAYING
 
     def _handle_game_over_key(self, event):
         if not self.game_over_screen:
@@ -226,6 +378,9 @@ class Game:
         if self.pickup_manager:
             self.pickup_manager.update(dt, self.player)
 
+        # Автосейв (v0.3.3): таймер + level-up trigger
+        self._update_autosave(dt)
+
         # Камера следует за игроком
         self.world.update_camera(
             self.player.x + self.player.width // 2,
@@ -264,13 +419,17 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD - Move | Shift - Sprint | Space - Attack | 1..4 - Weapon | "
-                    "F1 - Debug | F5/F9 - Save/Load | ESC - Menu",
+                    "WASD | Shift | Space | 1..4 | F1 - Debug | "
+                    "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
 
         elif self.state == GameState.GAME_OVER and self.game_over_screen:
             self.game_over_screen.draw(self.screen)
+
+        elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU) \
+                and self.save_load_menu is not None:
+            self.save_load_menu.draw(self.screen)
 
         pygame.display.flip()
 
@@ -291,18 +450,78 @@ class Game:
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
             "Controls: WASD - Move, Shift - Sprint, Space - Attack, 1..4 - Weapon",
-            "F1 - Debug, F5 - Save, F9 - Load, ESC - Menu",
+            "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10
         for line in info:
             debug(line, y=y)
             y += 20
 
+    # --- Автосейвы (v0.3.3) -----------------------------------------------
+
+    def _update_autosave(self, dt):
+        """Тик автосейва: периодический по таймеру + триггер на level-up.
+
+        Полностью отключается флагом ``AUTOSAVE_ENABLED=false`` в config.ini.
+        """
+        if not get_config('AUTOSAVE_ENABLED', True):
+            return
+        if not self.player or not self.world:
+            return
+
+        # Триггер по level-up — детектируем по изменению player.level
+        if get_config('AUTOSAVE_ON_LEVEL_UP', True):
+            current_level = self.player.level
+            if self._last_known_level is None:
+                self._last_known_level = current_level
+            elif current_level > self._last_known_level:
+                self._last_known_level = current_level
+                self.trigger_autosave(reason="level_up")
+                self._autosave_timer = 0.0  # не дублируем периодиком сразу
+                return
+            else:
+                self._last_known_level = current_level
+
+        # Периодический автосейв
+        interval_min = float(get_config('AUTOSAVE_INTERVAL_MINUTES', 5.0))
+        interval_sec = max(1.0, interval_min * 60.0)
+        self._autosave_timer += dt
+        if self._autosave_timer >= interval_sec:
+            self._autosave_timer = 0.0
+            self.trigger_autosave(reason="periodic")
+
+    def trigger_autosave(self, reason: str = "manual") -> bool:
+        """Записать автосейв с указанной причиной (periodic / level_up / ...).
+
+        Безопасно вызывать вне игры (вернёт False).
+        """
+        if not self.player or not self.world:
+            return False
+        limit = int(get_config('AUTOSAVE_LIMIT', 3))
+        ok = self.save_system.autosave(
+            self.player,
+            self.world,
+            game_stats=self.game_stats,
+            pickup_manager=self.pickup_manager,
+            enemy_manager=self.world.enemy_manager,
+            reason=reason,
+            limit=limit,
+        )
+        if ok:
+            self.log(f"🕐 Автосейв ({reason})", "INFO")
+        return ok
+
     # --- Сохранения --------------------------------------------------------
 
     def quicksave(self):
         if self.player and self.world:
-            ok = self.save_system.save_game(self.player, self.world)
+            ok = self.save_system.save_game(
+                self.player,
+                self.world,
+                game_stats=self.game_stats,
+                pickup_manager=self.pickup_manager,
+                enemy_manager=self.world.enemy_manager,
+            )
             print("Игра сохранена! (F5)" if ok else "Ошибка сохранения!")
         else:
             print("Нет активной игры для сохранения!")
@@ -336,6 +555,18 @@ class Game:
 
         self.save_system.apply_save_data_to_player(self.player, save_data)
         self.save_system.apply_save_data_to_world(self.world, save_data)
+        self.save_system.apply_save_data_to_enemies(
+            self.world.enemy_manager, save_data
+        )
+        self.save_system.apply_save_data_to_pickups(
+            self.pickup_manager, save_data
+        )
+        self.save_system.apply_save_data_to_game_stats(
+            self.game_stats, save_data
+        )
+        # Сброс автосейв-состояния (см. _apply_loaded_save_data)
+        self._autosave_timer = 0.0
+        self._last_known_level = self.player.level
         self.state = GameState.PLAYING
         print("   ✅ Игра загружена! (F9)")
 
