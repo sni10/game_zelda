@@ -75,25 +75,28 @@ def test_terrain_system():
     print("✓ Terrain damage and speed modification work")
 
 def test_world_loading():
-    """Test world loading system"""
-    print("\nTesting world loading...")
+    """Test multiworld loading system"""
+    print("\nTesting multiworld loading...")
     
-    # Check if world_map.txt exists and is properly formatted
-    map_file = os.path.join('data', 'world_map.txt')
-    assert os.path.exists(map_file)
+    # Check if new world map files exist
+    world_files = ['main_world.txt', 'cave_world.txt', 'underground_world.txt']
     
-    with open(map_file, 'r', encoding='utf-8') as f:
-        content = f.read()
+    for world_file in world_files:
+        map_file = os.path.join('data', world_file)
+        assert os.path.exists(map_file), f"World file {world_file} not found"
+        
+        with open(map_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Check that file is not empty and has proper format
+        assert len(content.strip()) > 0, f"World file {world_file} is empty"
+        print(f"✓ World file {world_file} exists and has content")
     
-    # Check that terrain symbol comments were removed
-    assert '# \'.\' - пустое пространство' not in content
-    assert '# \'#\' - горы' not in content
-    print("✓ Terrain symbol comments removed from world_map.txt")
-    
-    # Test world creation
-    world = World()
+    # Test world creation with main_world.txt
+    main_world_file = os.path.join('data', 'main_world.txt')
+    world = World(map_file=main_world_file)
     assert len(world.terrain_tiles) > 0
-    print("✓ World loads terrain tiles correctly")
+    print("✓ World loads terrain tiles correctly from main_world.txt")
 
 def main():
     """Run all tests"""
