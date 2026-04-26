@@ -479,3 +479,61 @@ class TestPlayer:
         # Test edge case with zero max_health
         self.player.max_health = 0
         assert self.player.get_health_percentage() == 0.0
+
+    # === Sprint (Shift) ===================================================
+
+    def _press(self, *codes):
+        """Имитация состояния клавиатуры: возвращает dict-like, где True
+        для перечисленных кодов и False для остальных."""
+        class _Keys:
+            def __init__(self, pressed):
+                self.pressed = set(pressed)
+            def __getitem__(self, code):
+                return code in self.pressed
+        return _Keys(codes)
+
+    def test_sprint_default_off(self):
+        """По умолчанию игрок не спринтует."""
+        assert self.player.is_sprinting is False
+
+    def test_sprint_activates_on_lshift(self):
+        keys = self._press(pygame.K_LSHIFT)
+        self.player.handle_input(keys)
+        assert self.player.is_sprinting is True
+
+    def test_sprint_activates_on_rshift(self):
+        keys = self._press(pygame.K_RSHIFT)
+        self.player.handle_input(keys)
+        assert self.player.is_sprinting is True
+
+    def test_sprint_off_when_shift_released(self):
+        # Сначала жмём
+        self.player.handle_input(self._press(pygame.K_LSHIFT))
+        assert self.player.is_sprinting
+        # Потом отпускаем
+        self.player.handle_input(self._press())
+        assert self.player.is_sprinting is False
+
+    def test_sprint_speed_multiplier_applied(self):
+        """При зажатом Shift игрок реально движется быстрее."""
+        # Без спринта - проходим X пикселей за 1 секунду
+        self.player.x = 100
+        self.player.y = 100
+        self.player.handle_input(self._press(pygame.K_d))  # вправо
+        self.player.update(dt=1.0, world=self.mock_world)
+        normal_x = self.player.x
+
+        # Сброс позиции и тот же ввод + Shift
+        self.player.x = 100
+        self.player.y = 100
+        self.player.handle_input(self._press(pygame.K_d, pygame.K_LSHIFT))
+        self.player.update(dt=1.0, world=self.mock_world)
+        sprint_x = self.player.x
+
+        # Должно быть ровно в sprint_multiplier раз дальше
+        normal_dist = normal_x - 100
+        sprint_dist = sprint_x - 100
+        ratio = sprint_dist / normal_dist
+        assert abs(ratio - self.player.sprint_multiplier) < 0.001, (
+            f"Sprint ratio {ratio} != multiplier {self.player.sprint_multiplier}"
+        )
