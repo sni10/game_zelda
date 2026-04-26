@@ -195,3 +195,40 @@ def test_set_mode_resets_state(save_system, player, world):
 def test_invalid_mode_raises():
     with pytest.raises(ValueError):
         SaveLoadMenu(SaveSystem(), mode="bogus")
+
+
+# --- Autosave entries (v0.3.3) ------------------------------------------
+
+def test_load_mode_lists_autosaves_after_quicksave(save_system, player, world):
+    """Автосейвы попадают в LOAD-меню между quicksave и manual-слотами."""
+    save_system.save_game(player, world)               # quicksave
+    save_system.autosave(player, world, reason="periodic")
+    save_system.autosave(player, world, reason="level_up")
+    save_system.save_to_slot(1, player, world)
+
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    kinds = [e["kind"] for e in menu.entries]
+    # quicksave первым, потом autosaves, потом manual
+    assert kinds[0] == "quicksave"
+    assert kinds[-1] == "manual"
+    assert kinds.count("autosave") == 2
+
+
+def test_load_mode_enter_autosave(save_system, player, world):
+    save_system.autosave(player, world, reason="periodic")
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    # курсор на единственной строке = autosave
+    action = menu.handle_input(_key(pygame.K_RETURN))
+    assert action["type"] == "load_autosave"
+    assert action["slot_id"] >= 1
+
+
+def test_load_mode_delete_autosave_via_modal(save_system, player, world):
+    save_system.autosave(player, world, reason="periodic")
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    action = menu.handle_input(_key(pygame.K_DELETE))
+    assert action is None
+    assert menu.modal == "delete"
+    assert menu.modal_kind == "autosave"
+    action = menu.handle_input(_key(pygame.K_y))
+    assert action["type"] == "delete_autosave"

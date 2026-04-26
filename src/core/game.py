@@ -75,6 +75,10 @@ class Game:
         # Куда возвращаться из SAVE_MENU: PLAYING (если открыт по F6) или MENU.
         self._save_menu_return_state = GameState.PLAYING
 
+        # Автосейв (v0.3.3): таймер периодического сейва + детектор level-up.
+        self._autosave_timer = 0.0
+        self._last_known_level = None
+
     # --- Логирование -------------------------------------------------------
 
     def log(self, message, level="INFO"):
@@ -111,6 +115,10 @@ class Game:
         self.log(f"Заспавнено врагов: {spawned} "
                  f"(по типам: {self.world.enemy_manager.alive_by_type()})",
                  "IMPORTANT")
+
+        # Сброс автосейв-таймера и базовый уровень для детектора level-up
+        self._autosave_timer = 0.0
+        self._last_known_level = self.player.level
 
         # Статистика и Game Over экран
         self.game_stats = GameStats()
@@ -257,6 +265,24 @@ class Game:
             self.save_load_menu.refresh()
             return
 
+        if atype == "load_autosave":
+            slot_id = action["slot_id"]
+            save_data = self.save_system.load_from_autosave(slot_id)
+            if save_data is None:
+                print(f"   ❌ Автосейв {slot_id}: ошибка загрузки")
+                self.save_load_menu.refresh()
+                return
+            self._apply_loaded_save_data(save_data)
+            print(f"   ✅ Загружен автосейв {slot_id}")
+            return
+
+        if atype == "delete_autosave":
+            ok = self.save_system.delete_autosave(action["slot_id"])
+            print(f"   🗑 Автосейв {action['slot_id']} удалён" if ok
+                  else f"   ❌ Не удалось удалить автосейв {action['slot_id']}")
+            self.save_load_menu.refresh()
+            return
+
     def _apply_loaded_save_data(self, save_data):
         """Применить уже загруженные save_data к текущему состоянию игры.
 
@@ -288,6 +314,10 @@ class Game:
         self.save_system.apply_save_data_to_game_stats(
             self.game_stats, save_data
         )
+        # Сброс автосейв-состояния под загруженного игрока, чтобы level-up
+        # триггер не сработал ложно сразу после загрузки.
+        self._autosave_timer = 0.0
+        self._last_known_level = self.player.level
         self.state = GameState.PLAYING
 
     def _handle_game_over_key(self, event):
@@ -347,6 +377,9 @@ class Game:
         # Обновление пикапов (магнит + сбор)
         if self.pickup_manager:
             self.pickup_manager.update(dt, self.player)
+
+        # Автосейв (v0.3.3): таймер + level-up trigger
+        self._update_autosave(dt)
 
         # Камера следует за игроком
         self.world.update_camera(
@@ -424,6 +457,60 @@ class Game:
             debug(line, y=y)
             y += 20
 
+    # --- Автосейвы (v0.3.3) -----------------------------------------------
+
+    def _update_autosave(self, dt):
+        """Тик автосейва: периодический по таймеру + триггер на level-up.
+
+        Полностью отключается флагом ``AUTOSAVE_ENABLED=false`` в config.ini.
+        """
+        if not get_config('AUTOSAVE_ENABLED', True):
+            return
+        if not self.player or not self.world:
+            return
+
+        # Триггер по level-up — детектируем по изменению player.level
+        if get_config('AUTOSAVE_ON_LEVEL_UP', True):
+            current_level = self.player.level
+            if self._last_known_level is None:
+                self._last_known_level = current_level
+            elif current_level > self._last_known_level:
+                self._last_known_level = current_level
+                self.trigger_autosave(reason="level_up")
+                self._autosave_timer = 0.0  # не дублируем периодиком сразу
+                return
+            else:
+                self._last_known_level = current_level
+
+        # Периодический автосейв
+        interval_min = float(get_config('AUTOSAVE_INTERVAL_MINUTES', 5.0))
+        interval_sec = max(1.0, interval_min * 60.0)
+        self._autosave_timer += dt
+        if self._autosave_timer >= interval_sec:
+            self._autosave_timer = 0.0
+            self.trigger_autosave(reason="periodic")
+
+    def trigger_autosave(self, reason: str = "manual") -> bool:
+        """Записать автосейв с указанной причиной (periodic / level_up / ...).
+
+        Безопасно вызывать вне игры (вернёт False).
+        """
+        if not self.player or not self.world:
+            return False
+        limit = int(get_config('AUTOSAVE_LIMIT', 3))
+        ok = self.save_system.autosave(
+            self.player,
+            self.world,
+            game_stats=self.game_stats,
+            pickup_manager=self.pickup_manager,
+            enemy_manager=self.world.enemy_manager,
+            reason=reason,
+            limit=limit,
+        )
+        if ok:
+            self.log(f"🕐 Автосейв ({reason})", "INFO")
+        return ok
+
     # --- Сохранения --------------------------------------------------------
 
     def quicksave(self):
@@ -477,6 +564,9 @@ class Game:
         self.save_system.apply_save_data_to_game_stats(
             self.game_stats, save_data
         )
+        # Сброс автосейв-состояния (см. _apply_loaded_save_data)
+        self._autosave_timer = 0.0
+        self._last_known_level = self.player.level
         self.state = GameState.PLAYING
         print("   ✅ Игра загружена! (F9)")
 

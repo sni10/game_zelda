@@ -15,7 +15,7 @@ class MainMenu:
         self.update_menu_items()
     
     def has_saves(self):
-        """Проверяет наличие любых сохранений (quicksave или manual-слотов)."""
+        """Проверяет наличие любых сохранений (quicksave / manual / autosave)."""
         saves_dir = "saves"
         if not os.path.exists(saves_dir):
             return False
@@ -26,6 +26,11 @@ class MainMenu:
         manual_dir = os.path.join(saves_dir, "manual")
         if os.path.isdir(manual_dir):
             if any(f.endswith('.json') for f in os.listdir(manual_dir)):
+                return True
+        # Автосейвы в saves/autosave/ (v0.3.3)
+        autosave_dir = os.path.join(saves_dir, "autosave")
+        if os.path.isdir(autosave_dir):
+            if any(f.endswith('.json') for f in os.listdir(autosave_dir)):
                 return True
         return False
     

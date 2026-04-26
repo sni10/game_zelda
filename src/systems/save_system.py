@@ -43,17 +43,25 @@ class SaveSystem:
     # Имя файла слота: slot_01.json ... slot_10.json
     _SLOT_FILENAME_FMT = "slot_{:02d}.json"
 
+    # Автосохранения (v0.3.3) — отдельная подпапка, ротация по mtime.
+    AUTOSAVE_SUBDIR = "autosave"
+    AUTOSAVE_DEFAULT_LIMIT = 3
+    _AUTOSAVE_FILENAME_FMT = "autosave_{:02d}.json"
+
     def __init__(self):
         self.save_version = self.SAVE_VERSION
         self.saves_dir = "saves"
         self.quicksave_file = "quicksave.json"
         self.manual_dir = os.path.join(self.saves_dir, self.MANUAL_SUBDIR)
+        self.autosave_dir = os.path.join(self.saves_dir, self.AUTOSAVE_SUBDIR)
 
         # Создаём папки сохранений если их нет
         if not os.path.exists(self.saves_dir):
             os.makedirs(self.saves_dir)
         if not os.path.exists(self.manual_dir):
             os.makedirs(self.manual_dir)
+        if not os.path.exists(self.autosave_dir):
+            os.makedirs(self.autosave_dir)
 
     # --- Сохранение --------------------------------------------------------
 
@@ -77,8 +85,13 @@ class SaveSystem:
             return False
 
     def _write_save(self, filepath, player, world, game_stats=None,
-                    pickup_manager=None, enemy_manager=None):
-        """Низкоуровневая запись save_data в указанный путь."""
+                    pickup_manager=None, enemy_manager=None,
+                    extra_data=None):
+        """Низкоуровневая запись save_data в указанный путь.
+
+        ``extra_data`` — опциональный dict, который добавляется в save_data
+        верхним уровнем (используется автосейвом для поля ``autosave_reason``).
+        """
         # Авто-определение enemy_manager из world
         if enemy_manager is None and world is not None:
             enemy_manager = getattr(world, "enemy_manager", None)
@@ -108,6 +121,10 @@ class SaveSystem:
                 "gold": getattr(player, "coins", 0) if player else 0,
             },
         }
+
+        if extra_data:
+            for k, v in extra_data.items():
+                save_data[k] = v
 
         # Папка должна существовать (для произвольных filepath)
         parent = os.path.dirname(filepath)
@@ -476,8 +493,146 @@ class SaveSystem:
             meta["max_hp"] = int(player.get("max_health", 0) or 0)
             stats = data.get("game_stats") or {}
             meta["play_time"] = float(stats.get("play_time", 0.0) or 0.0)
+            # Дополнительные поля для автосейвов
+            meta["reason"] = data.get("autosave_reason", "") or ""
             meta["valid"] = True
         except (OSError, json.JSONDecodeError, ValueError, TypeError):
             # Повреждённый файл — отдаём плейсхолдер с valid=False
             pass
         return meta
+
+    # --- Автосейвы (v0.3.3) -----------------------------------------------
+
+    def _autosave_filepath(self, slot_id: int) -> str:
+        """Полный путь к файлу автосейв-слота."""
+        return os.path.join(
+            self.autosave_dir, self._AUTOSAVE_FILENAME_FMT.format(int(slot_id))
+        )
+
+    def autosave(self, player, world, game_stats=None, pickup_manager=None,
+                 enemy_manager=None, reason: str = "periodic",
+                 limit: int = None) -> bool:
+        """Записать автосейв с ротацией.
+
+        Алгоритм слота:
+        1. Если есть свободный slot_id (1..limit) — пишем туда.
+        2. Иначе — затираем самый старый по mtime.
+
+        ``reason`` сохраняется в save_data как ``autosave_reason`` и потом
+        отображается в UI («periodic», «level_up», ...).
+        """
+        if limit is None:
+            limit = self.AUTOSAVE_DEFAULT_LIMIT
+        try:
+            limit = max(1, int(limit))
+        except (TypeError, ValueError):
+            limit = self.AUTOSAVE_DEFAULT_LIMIT
+
+        try:
+            slot_id = self._pick_autosave_slot(limit)
+            filepath = self._autosave_filepath(slot_id)
+            ok = self._write_save(
+                filepath, player, world, game_stats,
+                pickup_manager, enemy_manager,
+                extra_data={"autosave_reason": str(reason)},
+            )
+            if ok:
+                # Ротация: если лимит уменьшили в конфиге — почистим хвост.
+                self._enforce_autosave_limit(limit)
+            return ok
+        except Exception as e:
+            print(f"Ошибка автосейва: {e}")
+            return False
+
+    def _pick_autosave_slot(self, limit: int) -> int:
+        """Найти slot_id 1..limit для записи автосейва.
+
+        Сначала первый свободный, иначе — самый старый по mtime.
+        """
+        for slot_id in range(1, limit + 1):
+            if not os.path.exists(self._autosave_filepath(slot_id)):
+                return slot_id
+        # Все заняты — берём самый старый
+        oldest_slot = 1
+        oldest_mtime = None
+        for slot_id in range(1, limit + 1):
+            mtime = os.path.getmtime(self._autosave_filepath(slot_id))
+            if oldest_mtime is None or mtime < oldest_mtime:
+                oldest_mtime = mtime
+                oldest_slot = slot_id
+        return oldest_slot
+
+    def _enforce_autosave_limit(self, limit: int) -> None:
+        """Удалить автосейвы со slot_id > limit (если лимит уменьшился)."""
+        try:
+            for filename in os.listdir(self.autosave_dir):
+                if not filename.startswith("autosave_") \
+                        or not filename.endswith(".json"):
+                    continue
+                try:
+                    slot_id = int(filename[len("autosave_"):-len(".json")])
+                except ValueError:
+                    continue
+                if slot_id > limit:
+                    os.remove(os.path.join(self.autosave_dir, filename))
+        except OSError:
+            pass
+
+    def list_autosaves(self):
+        """Список метаданных автосейвов (новый сверху).
+
+        Возвращает list[dict] вида::
+
+            {"slot_id": 1, "timestamp": "...", "level": 3, "play_time": ...,
+             "hp": 80, "max_hp": 100, "reason": "level_up",
+             "filename": "autosave_01.json", "mtime": 1234567.0, "valid": True}
+        """
+        result = []
+        if not os.path.isdir(self.autosave_dir):
+            return result
+        for filename in os.listdir(self.autosave_dir):
+            if not filename.startswith("autosave_") \
+                    or not filename.endswith(".json"):
+                continue
+            try:
+                slot_id = int(filename[len("autosave_"):-len(".json")])
+            except ValueError:
+                continue
+            filepath = os.path.join(self.autosave_dir, filename)
+            meta = self._read_metadata(filepath)
+            meta["slot_id"] = slot_id
+            meta["filename"] = filename
+            try:
+                meta["mtime"] = os.path.getmtime(filepath)
+            except OSError:
+                meta["mtime"] = 0.0
+            result.append(meta)
+        # Свежие сверху
+        result.sort(key=lambda m: m.get("mtime", 0.0), reverse=True)
+        return result
+
+    def load_from_autosave(self, slot_id: int):
+        """Загрузить save_data из автосейв-слота. None при ошибке."""
+        filepath = self._autosave_filepath(slot_id)
+        if not os.path.exists(filepath):
+            print(f"Автосейв {slot_id} не найден")
+            return None
+        return self._load_from_path(filepath)
+
+    def delete_autosave(self, slot_id: int) -> bool:
+        """Удалить файл автосейв-слота."""
+        filepath = self._autosave_filepath(slot_id)
+        if not os.path.exists(filepath):
+            return False
+        try:
+            os.remove(filepath)
+            print(f"Автосейв {slot_id} удалён")
+            return True
+        except OSError as e:
+            print(f"Ошибка удаления автосейва {slot_id}: {e}")
+            return False
+
+    def get_latest_autosave_metadata(self):
+        """Метаданные самого свежего автосейва (или None)."""
+        items = self.list_autosaves()
+        return items[0] if items else None

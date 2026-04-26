@@ -26,6 +26,8 @@ API ↔ Game:
         {"type": "load_slot", "slot_id": N}          — загрузить manual-слот N
         {"type": "save_slot", "slot_id": N}          — (под)твердили сохранение в N
         {"type": "delete_slot", "slot_id": N}        — подтверждили удаление N
+        {"type": "load_autosave", "slot_id": N}      — загрузить автосейв N (v0.3.3)
+        {"type": "delete_autosave", "slot_id": N}    — подтверждили удаление автосейва (v0.3.3)
         {"type": "back"}                             — Esc, выход из меню
 """
 import pygame
@@ -83,6 +85,9 @@ class SaveLoadMenu:
         # Активная модалка: None | "overwrite" | "delete"
         self.modal = None
         self.modal_slot_id = None
+        # Какого вида запись подтверждаем (manual / autosave) —
+        # нужно для маршрутизации delete-action.
+        self.modal_kind = None
 
         # entries — список словарей, представляющих строки списка.
         # Для load: optional quicksave + только заполненные manual-слоты.
@@ -99,6 +104,7 @@ class SaveLoadMenu:
         self.selected_index = 0
         self.modal = None
         self.modal_slot_id = None
+        self.modal_kind = None
         self.refresh()
 
     def refresh(self) -> None:
@@ -113,6 +119,22 @@ class SaveLoadMenu:
                     "label": "🕒 Быстрое сохранение (F5)",
                     "meta": qs_meta,
                 })
+            # Автосейвы (v0.3.3) — после quicksave, до manual-слотов.
+            list_autosaves = getattr(
+                self.save_system, "list_autosaves", None
+            )
+            if callable(list_autosaves):
+                for meta in list_autosaves():
+                    reason = meta.get("reason") or ""
+                    label = f"🕐 Автосохранение #{meta['slot_id']:02d}"
+                    if reason:
+                        label = f"{label}  ({reason})"
+                    entries.append({
+                        "kind": "autosave",
+                        "slot_id": meta["slot_id"],
+                        "label": label,
+                        "meta": meta,
+                    })
             for meta in self.save_system.list_manual_saves():
                 entries.append({
                     "kind": "manual",
@@ -173,6 +195,8 @@ class SaveLoadMenu:
         if self.mode == self.MODE_LOAD:
             if entry["kind"] == "quicksave":
                 return {"type": "load_quicksave"}
+            if entry["kind"] == "autosave":
+                return {"type": "load_autosave", "slot_id": entry["slot_id"]}
             return {"type": "load_slot", "slot_id": entry["slot_id"]}
         # save mode
         if entry["meta"] is None:
@@ -181,31 +205,39 @@ class SaveLoadMenu:
         # занятый слот — модалка перезаписи
         self.modal = "overwrite"
         self.modal_slot_id = entry["slot_id"]
+        self.modal_kind = entry["kind"]
         return None
 
     def _handle_delete(self, entry):
         # Quicksave удалять нельзя (см. BACKLOG.md v0.3.2 п.8)
-        if entry["kind"] != "manual":
+        if entry["kind"] not in ("manual", "autosave"):
             return None
         if entry["meta"] is None:
             # пустой слот — нечего удалять
             return None
         self.modal = "delete"
         self.modal_slot_id = entry["slot_id"]
+        self.modal_kind = entry["kind"]
         return None
 
     def _handle_modal_input(self, event):
         if event.key in (pygame.K_y,):
-            modal, slot_id = self.modal, self.modal_slot_id
+            modal, slot_id, kind = (
+                self.modal, self.modal_slot_id, self.modal_kind
+            )
             self.modal = None
             self.modal_slot_id = None
+            self.modal_kind = None
             if modal == "overwrite":
                 return {"type": "save_slot", "slot_id": slot_id}
             if modal == "delete":
+                if kind == "autosave":
+                    return {"type": "delete_autosave", "slot_id": slot_id}
                 return {"type": "delete_slot", "slot_id": slot_id}
         elif event.key in (pygame.K_n, pygame.K_ESCAPE):
             self.modal = None
             self.modal_slot_id = None
+            self.modal_kind = None
         return None
 
     # --- Отрисовка ---------------------------------------------------------
@@ -245,7 +277,7 @@ class SaveLoadMenu:
             self._draw_modal(
                 screen, width, height,
                 title="Удалить сохранение?",
-                detail=self._slot_detail(self.modal_slot_id),
+                detail=self._slot_detail(self.modal_slot_id, self.modal_kind),
                 hint="Y — да, N/Esc — нет",
             )
 
@@ -336,16 +368,21 @@ class SaveLoadMenu:
         screen.blit(hint_surf,
                     hint_surf.get_rect(center=(width // 2, box.y + 150)))
 
-    def _slot_detail(self, slot_id) -> str:
+    def _slot_detail(self, slot_id, kind=None) -> str:
         if slot_id is None:
             return ""
         for e in self.entries:
-            if e.get("slot_id") == slot_id and e["meta"] is not None:
-                m = e["meta"]
-                return (
-                    f"Слот {slot_id:02d} — "
-                    f"{_format_timestamp(m.get('timestamp', ''))}, "
-                    f"Lv.{m.get('level', 0)}, "
-                    f"⏱ {_format_playtime(m.get('play_time', 0.0))}"
-                )
+            if e.get("slot_id") != slot_id or e["meta"] is None:
+                continue
+            if kind is not None and e.get("kind") != kind:
+                continue
+            m = e["meta"]
+            prefix = ("Автосейв" if e.get("kind") == "autosave"
+                      else "Слот")
+            return (
+                f"{prefix} {slot_id:02d} — "
+                f"{_format_timestamp(m.get('timestamp', ''))}, "
+                f"Lv.{m.get('level', 0)}, "
+                f"⏱ {_format_playtime(m.get('play_time', 0.0))}"
+            )
         return f"Слот {slot_id:02d}"
