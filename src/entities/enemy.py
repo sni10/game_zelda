@@ -48,6 +48,8 @@ class Enemy:
         self.knockback_timer = 0.0
         # Attack cooldown — после удара враг не может бить N секунд
         self.attack_cooldown_timer = 0.0
+        # Флаг: враг вплотную к игроку (позиция откачена из-за коллизии)
+        self.touching_player = False
     def take_damage(self, amount: int) -> None:
         self.health = max(0, self.health - amount)
         self.last_hit_time = pygame.time.get_ticks()
@@ -88,6 +90,9 @@ class Enemy:
             self.y = old_y
             self.rect.x = int(old_x)
             self.rect.y = int(old_y)
+            self.touching_player = True
+        else:
+            self.touching_player = False
     def draw(self, screen, camera_x, camera_y) -> None:
         if self.is_dead():
             return
@@ -136,9 +141,13 @@ class LightEnemy(Enemy):
     TYPE_ID = 'light'
     @classmethod
     def create(cls, x, y, patrol_zone) -> 'LightEnemy':
+        chase_r = get_config('ENEMIES_LIGHT_CHASE_RADIUS', 120)
+        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
+        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
+                           patrol_fallback=PatrolBehavior())
         return cls(x, y,
                    stats=_stats_from_config('LIGHT', 'Light'),
-                   ai=PatrolBehavior(),
+                   ai=ai,
                    patrol_zone=patrol_zone)
 class HeavyEnemy(Enemy):
     """Тяжёлый враг: большой, медленный, 3 HP."""

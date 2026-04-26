@@ -254,7 +254,8 @@ class EnemyManager:
             # Враг на кулдауне — не бьёт
             if enemy.attack_cooldown_timer > 0:
                 continue
-            if enemy.rect.colliderect(player.rect):
+            # Враг вплотную (touching_player) или прямо пересекается
+            if enemy.touching_player or enemy.rect.colliderect(player.rect):
                 dmg = enemy.stats.damage
                 hit = player.take_damage(dmg)
                 if hit:
