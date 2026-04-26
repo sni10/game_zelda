@@ -60,18 +60,22 @@ class TestSaveSystemCoverage:
         assert result is None
     
     def test_load_game_version_warning(self):
-        """Test version warning in load_game"""
-        # Create save with different version
+        """Test version warning in load_game (схема валидна, версия unknown)."""
+        # Create save with valid schema but unknown version — должно загрузиться
+        # с предупреждением о неподдерживаемой версии (best-effort).
         save_data = {
-            "version": "999.0",  # Different version
-            "player": {"x": 100, "y": 200},
+            "version": "999.0",
+            "player": {
+                "x": 100, "y": 200,
+                "health": 10, "max_health": 10,
+            },
             "world": {"width": 1000, "height": 1000}
         }
-        
+
         version_file = os.path.join(self.temp_dir, "version.json")
         with open(version_file, 'w') as f:
             json.dump(save_data, f)
-        
+
         # Should still load but print warning
         result = self.save_system.load_game("version.json")
         assert result is not None

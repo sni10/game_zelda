@@ -141,8 +141,12 @@ class Game:
         elif action == "continue_game":
             self.quickload()
         elif action == "load_game":
-            print("Load game - функция будет реализована позже")
-            self.start_new_game()
+            # Полноценное «Загрузить игру» пока без UI слотов (см. v0.3.2 в BACKLOG.md):
+            # используем существующий quicksave-файл, если он есть.
+            if self.save_system.quicksave_exists():
+                self.quickload()
+            else:
+                print("Нет файлов сохранения")
         elif action == "exit":
             self.running = False
 
@@ -302,7 +306,13 @@ class Game:
 
     def quicksave(self):
         if self.player and self.world:
-            ok = self.save_system.save_game(self.player, self.world)
+            ok = self.save_system.save_game(
+                self.player,
+                self.world,
+                game_stats=self.game_stats,
+                pickup_manager=self.pickup_manager,
+                enemy_manager=self.world.enemy_manager,
+            )
             print("Игра сохранена! (F5)" if ok else "Ошибка сохранения!")
         else:
             print("Нет активной игры для сохранения!")
@@ -336,6 +346,15 @@ class Game:
 
         self.save_system.apply_save_data_to_player(self.player, save_data)
         self.save_system.apply_save_data_to_world(self.world, save_data)
+        self.save_system.apply_save_data_to_enemies(
+            self.world.enemy_manager, save_data
+        )
+        self.save_system.apply_save_data_to_pickups(
+            self.pickup_manager, save_data
+        )
+        self.save_system.apply_save_data_to_game_stats(
+            self.game_stats, save_data
+        )
         self.state = GameState.PLAYING
         print("   ✅ Игра загружена! (F9)")
 
