@@ -14,14 +14,18 @@ class Player:
         
         # Скорость движения (как в классической Zelda)
         self.speed = 120  # пикселей в секунду
-        
+        # Множитель скорости при удержании Shift. Берём из конфига, чтобы
+        # геймдизайн (баланс) можно было крутить без правки кода.
+        self.sprint_multiplier = get_config('PLAYER_SPRINT_MULTIPLIER')
+        self.is_sprinting = False  # обновляется в handle_input()
+
         # Направление движения
         self.direction_x = 0
         self.direction_y = 0
         self.facing_direction = 'down'  # направление взгляда для атаки (8 направлений)
         
         # Система здоровья
-        self.max_health = 100
+        self.max_health = get_config('PLAYER_MAX_HEALTH')
         self.health = self.max_health
         self.last_damage_time = 0
         self.damage_cooldown = 1000  # миллисекунды между уроном от окружения
@@ -31,6 +35,10 @@ class Player:
         self.attacking = False
         self.attack_timer = 0          # время старта текущей атаки (ticks)
         self.last_attack_time = 0      # для cooldown между атаками
+        # Уникальный ID текущего взмаха оружия. Инкрементируется при старте
+        # каждой новой атаки. EnemyManager использует это, чтобы не наносить
+        # урон одной атакой несколько раз (атака длится 200-400мс = много кадров).
+        self.attack_id = 0
 
         # Инвентарь оружий и активное оружие
         self.weapons = default_loadout()
@@ -58,12 +66,34 @@ class Player:
                 return True
         return False
 
+    @staticmethod
+    def _is_key_pressed(keys, code):
+        """Безопасное чтение состояния клавиши.
+
+        pygame.key.get_pressed() возвращает sequence-like с фиксированной
+        длиной (все клавиши доступны). Но в тестах мокают обычным dict,
+        который выбрасывает KeyError на отсутствующих ключах. Этот хелпер
+        возвращает False вместо исключения - удобно для частично-замоканных
+        тестов.
+        """
+        try:
+            return bool(keys[code])
+        except (KeyError, IndexError):
+            return False
+
     def handle_input(self, keys):
         """Обработка ввода с клавиатуры"""
         # Сброс направления
         self.direction_x = 0
         self.direction_y = 0
-        
+
+        # Спринт - удержание любого Shift. Атакующий не может спринтовать
+        # (атака блокирует движение в update()).
+        self.is_sprinting = (
+            self._is_key_pressed(keys, pygame.K_LSHIFT)
+            or self._is_key_pressed(keys, pygame.K_RSHIFT)
+        )
+
         # Движение по 8 направлениям
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.direction_x = -1
@@ -111,6 +141,9 @@ class Player:
             self.attacking = True
             self.attack_timer = current_time
             self.last_attack_time = current_time
+            # Новый взмах = новый ID. EnemyManager сравнивает его с
+            # last_hit_attack_id у каждого врага, чтобы 1 атака = 1 урон.
+            self.attack_id += 1
 
     def update(self, dt, world, game_stats=None):
         """Обновление состояния игрока"""
@@ -125,7 +158,12 @@ class Player:
             # Проверяем текущий ландшафт для модификации скорости
             current_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
             speed_modifier = current_tile.speed_modifier if current_tile else 1.0
-            effective_speed = self.speed * speed_modifier
+            # Применяем sprint multiplier если зажат Shift.
+            # Sprint умножается ПОСЛЕ модификатора террейна - это значит
+            # на песке (speed_modifier=0.5) спринт всё равно даст ускорение,
+            # но абсолютная скорость останется ниже обычной без спринта.
+            sprint = self.sprint_multiplier if self.is_sprinting else 1.0
+            effective_speed = self.speed * speed_modifier * sprint
             
             # Вычисление новой позиции
             new_x = self.x + self.direction_x * effective_speed * dt

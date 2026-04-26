@@ -2,6 +2,7 @@ import pygame
 import os
 from src.core.config_loader import get_config, get_color
 from src.world.terrain import load_map_from_file, TerrainType, TRANSLUCENT_OVERLAY_TYPES
+from src.systems.enemy_manager import EnemyManager
 
 
 from typing import List
@@ -33,6 +34,10 @@ class World:
         self.overlay_alpha_under_player = 120   # альфа когда игрок под тайлом
         self.overlay_alpha_normal = 255         # обычная альфа
         self.player_rect_for_overlay: pygame.Rect = None  # устанавливается из draw()
+
+        # Менеджер врагов. Враги хранятся внутри мира - удобно для save/load
+        # и логически правильно (мир = всё что на нём).
+        self.enemy_manager = EnemyManager(self)
 
     def generate_obstacles_from_terrain(self):
         """Генерация препятствий из загруженной terrain карты"""

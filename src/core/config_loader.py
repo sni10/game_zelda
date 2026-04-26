@@ -51,7 +51,8 @@ class ConfigLoader:
             self._validate_colors(parser)
             self._validate_debug_settings(parser)
             self._validate_world_generation_settings(parser)
-            
+            self._validate_enemies_settings(parser)
+
             # Store validated configuration
             self._config = {
                 # Display settings
@@ -67,6 +68,14 @@ class ConfigLoader:
                 # Player settings
                 'PLAYER_SPEED': parser.getint('player', 'player_speed'),
                 'PLAYER_SIZE': parser.getint('player', 'player_size'),
+                'PLAYER_MAX_HEALTH': parser.getint('player', 'player_max_health')
+                    if parser.has_option('player', 'player_max_health') else 1000,
+                # Sprint - опциональный (default = 1.8 если не задан в config)
+                'PLAYER_SPRINT_MULTIPLIER': (
+                    parser.getfloat('player', 'player_sprint_multiplier')
+                    if parser.has_option('player', 'player_sprint_multiplier')
+                    else 1.8
+                ),
                 
                 # Attack settings
                 'ATTACK_DURATION': parser.getint('attack', 'attack_duration'),
@@ -81,7 +90,30 @@ class ConfigLoader:
                 'OBSTACLE_COUNT': parser.getint('world_generation', 'obstacle_count'),
                 'SAFE_ZONE_SIZE': parser.getint('world_generation', 'safe_zone_size'),
             }
-            
+
+            # Загружаем все ключи из секции [enemies] - они опциональные,
+            # подхватятся через get_config() как ENEMIES_<UPPERCASE_KEY>.
+            if parser.has_section('enemies'):
+                for key, value in parser.items('enemies'):
+                    upper_key = f"ENEMIES_{key.upper()}"
+                    # Цвета (содержат запятую) парсим как tuple
+                    if ',' in value:
+                        try:
+                            self._config[upper_key] = tuple(
+                                int(v.strip()) for v in value.split(',')
+                            )
+                            continue
+                        except ValueError:
+                            pass
+                    # Числа - int или float
+                    try:
+                        self._config[upper_key] = int(value)
+                    except ValueError:
+                        try:
+                            self._config[upper_key] = float(value)
+                        except ValueError:
+                            self._config[upper_key] = value
+
             # Load colors
             colors = self._load_colors(parser)
             self._config.update(colors)
@@ -142,7 +174,16 @@ class ConfigLoader:
         player_size = parser.getint('player', 'player_size')
         if player_size <= 0:
             raise ConfigValidationError("player_size must be a positive integer")
-    
+
+        # Множитель спринта - опциональный (для обратной совместимости).
+        # Если задан - должен быть >= 1.0 (иначе спринт замедлял бы).
+        if parser.has_option('player', 'player_sprint_multiplier'):
+            sprint = parser.getfloat('player', 'player_sprint_multiplier')
+            if sprint < 1.0:
+                raise ConfigValidationError(
+                    "player_sprint_multiplier must be >= 1.0"
+                )
+
     def _validate_attack_settings(self, parser):
         """Validate attack-related settings"""
         if not parser.has_section('attack'):
@@ -206,7 +247,55 @@ class ConfigLoader:
         safe_zone_size = parser.getint('world_generation', 'safe_zone_size')
         if safe_zone_size < 0:
             raise ConfigValidationError("safe_zone_size must be a non-negative integer")
-    
+
+    def _validate_enemies_settings(self, parser):
+        """Валидация секции [enemies]: статы 3 типов + параметры спавна."""
+        if not parser.has_section('enemies'):
+            raise ConfigValidationError("Missing [enemies] section in config")
+
+        # Положительные числа
+        positive_int_keys = [
+            'light_max_health', 'light_speed', 'light_size', 'light_damage',
+            'heavy_max_health', 'heavy_speed', 'heavy_size', 'heavy_damage',
+            'fast_max_health', 'fast_speed', 'fast_size', 'fast_damage',
+            'patrol_radius_tiles', 'spawn_min_distance', 'spawn_max_attempts',
+        ]
+        for key in positive_int_keys:
+            if not parser.has_option('enemies', key):
+                raise ConfigValidationError(f"Missing enemies.{key}")
+            value = parser.getint('enemies', key)
+            if value <= 0:
+                raise ConfigValidationError(f"enemies.{key} must be positive")
+
+        # respawn_interval - опциональный float (если не задан = 5.0)
+        if parser.has_option('enemies', 'respawn_interval'):
+            interval = parser.getfloat('enemies', 'respawn_interval')
+            if interval <= 0:
+                raise ConfigValidationError(
+                    "enemies.respawn_interval must be positive"
+                )
+
+        # Неотрицательные счётчики (могут быть 0 если этот тип не нужен)
+        for key in ('initial_count_light', 'initial_count_heavy', 'initial_count_fast'):
+            if not parser.has_option('enemies', key):
+                raise ConfigValidationError(f"Missing enemies.{key}")
+            if parser.getint('enemies', key) < 0:
+                raise ConfigValidationError(f"enemies.{key} must be >= 0")
+
+        # Цвета RGB
+        for key in ('light_color', 'heavy_color', 'fast_color'):
+            if not parser.has_option('enemies', key):
+                raise ConfigValidationError(f"Missing enemies.{key}")
+            color_str = parser.get('enemies', key)
+            try:
+                parts = [int(x.strip()) for x in color_str.split(',')]
+                if len(parts) != 3 or not all(0 <= c <= 255 for c in parts):
+                    raise ValueError
+            except ValueError:
+                raise ConfigValidationError(
+                    f"enemies.{key} must be 'R,G,B' with values 0..255"
+                )
+
     def _load_colors(self, parser) -> Dict[str, Tuple[int, int, int]]:
         """Load and parse color values from INI format"""
         colors = {}

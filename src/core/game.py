@@ -113,6 +113,14 @@ class Game:
             f"оружие='{self.player.current_weapon.name}'"
         )
 
+        # Спавн врагов вне зоны видимости игрока
+        spawned = self.world.enemy_manager.spawn_initial(
+            self.player.x, self.player.y
+        )
+        self.log(f"Заспавнено врагов: {spawned} "
+                 f"(по типам: {self.world.enemy_manager.alive_by_type()})",
+                 "IMPORTANT")
+
         # Статистика и Game Over экран
         self.game_stats = GameStats()
         self.game_over_screen = GameOverScreen(
@@ -200,8 +208,31 @@ class Game:
         self.player.handle_input(keys)
         self.player.update(dt, self.world, self.game_stats)
 
+        # Враги патрулируют свои зоны + авто-респавн при удалении игрока
+        self.world.enemy_manager.update(dt, self.player.x, self.player.y)
+
+        # Если игрок атакует - применяем урон врагам.
+        # apply_player_attack использует attack_id, чтобы 1 атака
+        # = 1 урон каждому затронутому врагу (даже если зона держится
+        # 200-400мс на нём).
+        if self.player.attacking:
+            weapon = self.player.current_weapon
+            hits, kills = self.world.enemy_manager.apply_player_attack(
+                self.player.attack_id,
+                self.player.get_attack_rects(),
+                weapon.damage,
+            )
+            if kills > 0 and self.game_stats:
+                for _ in range(kills):
+                    self.game_stats.record_enemy_kill(weapon.damage)
+            elif hits > 0 and self.game_stats:
+                self.game_stats.record_attack(weapon.damage * hits)
+
         if self.game_stats:
             self.game_stats.update_position(self.player.x, self.player.y)
+
+        # Контактный урон от врагов (враг касается игрока = дамаг)
+        self.world.enemy_manager.apply_contact_damage(self.player)
 
         # Камера следует за игроком
         self.world.update_camera(
@@ -220,11 +251,15 @@ class Game:
             self.screen.fill(get_color('BLACK'))
             # 1) Земля + миникарта
             self.world.draw(self.screen, self.player.x, self.player.y)
-            # 2) Игрок поверх земли
+            # 2) Враги поверх земли (но под игроком)
+            self.world.enemy_manager.draw(
+                self.screen, self.world.camera_x, self.world.camera_y
+            )
+            # 3) Игрок поверх врагов
             self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
-            # 3) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
+            # 4) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
             self.world.draw_overlay(self.screen, self.player.rect)
-            # 4) HUD
+            # 5) HUD
             self.draw_health_bar()
             self.draw_weapon_hud()
 
@@ -232,7 +267,7 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD - Move | Space - Attack | 1..4 - Weapon | "
+                    "WASD - Move | Shift - Sprint | Space - Attack | 1..4 - Weapon | "
                     "F1 - Debug | F5/F9 - Save/Load | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
@@ -246,10 +281,14 @@ class Game:
         info = [
             f"Player: ({int(self.player.x)}, {int(self.player.y)})",
             f"Direction: {self.player.facing_direction}",
+            f"Sprint: {self.player.is_sprinting} (x{self.player.sprint_multiplier})",
             f"Weapon: {self.player.current_weapon.name}",
-            f"Attacking: {self.player.attacking}",
+            f"Attacking: {self.player.attacking} (id={self.player.attack_id})",
+            f"Enemies alive: {self.world.enemy_manager.alive_count()} "
+            f"({self.world.enemy_manager.alive_by_type()})",
+            f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
-            "Controls: WASD - Move, Space - Attack, 1..4 - Weapon",
+            "Controls: WASD - Move, Shift - Sprint, Space - Attack, 1..4 - Weapon",
             "F1 - Debug, F5 - Save, F9 - Load, ESC - Menu",
         ]
         y = 10
@@ -280,9 +319,10 @@ class Game:
              bar_width + border_width * 2, bar_height + border_width * 2),
             border_width,
         )
-        # Текст
+        # Текст — проценты вместо абсолютных HP (1000 HP = 100%)
         font = pygame.font.Font(None, 24)
-        text = f"{int(self.player.health)}/{int(self.player.max_health)}"
+        pct_display = int(round(pct * 100))
+        text = f"{pct_display}%"
         text_surf = font.render(text, True, get_color('WHITE'))
         self.screen.blit(
             text_surf,
