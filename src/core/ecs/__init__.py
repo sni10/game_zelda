@@ -1,1 +1,0 @@
-# ECS (Entity Component System) package

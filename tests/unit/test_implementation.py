@@ -75,23 +75,27 @@ def test_terrain_system():
     print("✓ Terrain damage and speed modification work")
 
 def test_world_loading():
-    """Test multiworld loading system"""
-    print("\nTesting multiworld loading...")
-    
-    # Check if new world map files exist
-    world_files = ['main_world.txt', 'cave_world.txt', 'underground_world.txt']
-    
-    for world_file in world_files:
-        map_file = os.path.join('data', world_file)
-        assert os.path.exists(map_file), f"World file {world_file} not found"
-        
-        with open(map_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Check that file is not empty and has proper format
-        assert len(content.strip()) > 0, f"World file {world_file} is empty"
-        print(f"✓ World file {world_file} exists and has content")
-    
+    """Test world map file loading.
+
+    Multi-world (cave/underground) был удалён как оверинжиниринг -
+    проверяем только наличие основной карты + опционального overlay.
+    """
+    print("\nTesting world loading...")
+
+    main_map = os.path.join('data', 'main_world.txt')
+    assert os.path.exists(main_map), "main_world.txt not found"
+    with open(main_map, 'r', encoding='utf-8') as f:
+        content = f.read()
+    assert len(content.strip()) > 0, "main_world.txt is empty"
+    print("✓ World file main_world.txt exists and has content")
+
+    # Overlay-слой опционален, но если есть - тоже проверим что не пустой
+    overlay_map = os.path.join('data', 'main_world_overlay.txt')
+    if os.path.exists(overlay_map):
+        with open(overlay_map, 'r', encoding='utf-8') as f:
+            overlay_content = f.read()
+        assert len(overlay_content.strip()) > 0, "Overlay file is empty"
+        print("✓ Overlay file main_world_overlay.txt exists and has content")
     # Test world creation with main_world.txt
     main_world_file = os.path.join('data', 'main_world.txt')
     world = World(map_file=main_world_file)

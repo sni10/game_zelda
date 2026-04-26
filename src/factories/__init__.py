@@ -1,1 +1,0 @@
-# Factories package for creating game entities and worlds
