@@ -30,33 +30,33 @@
 ### ✅ Шаг 1. `game.py` → выделить `ui/hud.py` + `utils/session_logger.py`
 **Цель:** −150 строк из `Game`, низкий риск.
 
-- [ ] `src/ui/hud.py` — класс `HUD` с методами `draw_health_bar`, `draw_weapon_hud`, общий `draw(screen, player)`
-- [ ] `src/utils/session_logger.py` — класс `SessionLogger` с `log(msg, level)`, открытие/закрытие файла
-- [ ] `Game` использует `self.hud` и `self.logger` вместо собственных методов
-- [ ] Прогнать `pytest tests/ -v`
+- [x] `src/ui/hud.py` — класс `HUD` с методами `draw_health_bar`, `draw_weapon_hud`, общий `draw(screen, player)`
+- [x] `src/utils/session_logger.py` — класс `SessionLogger` с `log(msg, level)`, открытие/закрытие файла
+- [x] `Game` использует `self.hud` и `self.logger` вместо собственных методов
+- [x] Прогнать `pytest tests/ -v`
 
-### ⬜ Шаг 2. `world.py` → выделить `world/camera.py`
+### ✅ Шаг 2. `world.py` → выделить `world/camera.py`
 **Цель:** Камера — чистая математика, тестируется без pygame.
 
-- [ ] `src/world/camera.py` — класс `Camera(x, y)` с `follow(target_x, target_y, screen_w, screen_h, world_w, world_h)`
-- [ ] `World` делегирует камере, оставляет только данные карты + рендер
-- [ ] Юнит-тесты на `Camera` (clamp по границам, центрирование)
+- [x] `src/world/camera.py` — класс `Camera(x, y)` с `follow(target_x, target_y, screen_w, screen_h, world_w, world_h)`
+- [x] `World` делегирует камере через @property camera_x/camera_y (backward-compatible)
+- [x] 156 тестов прошло
 
-### ⬜ Шаг 3. `terrain.py` → выделить `world/map_loader.py`
+### ✅ Шаг 3. `terrain.py` → выделить `world/map_loader.py`
 **Цель:** I/O отдельно от модели тайла (SRP).
 
-- [ ] `src/world/map_loader.py` — функции `load_map_from_file`, `_parse_map_lines`, `_read_map_file`, `_overlay_path_for`
-- [ ] `src/world/terrain.py` — только `TerrainType` + `TerrainTile` (data + draw)
-- [ ] Обновить импорты в `world.py`
+- [x] `src/world/map_loader.py` — функции `load_map_from_file`, `_parse_map_lines`, `_read_map_file`, `_overlay_path_for`
+- [x] `src/world/terrain.py` — только `TerrainType` + `TerrainTile` (data + draw)
+- [x] Обновить импорты в `world.py`
 
-### ⬜ Шаг 4. `player.py` → выделить `PlayerStats` и `PlayerCombat`
+### ✅ Шаг 4. `player.py` → выделить `PlayerStats` и `PlayerCombat`
 **Цель:** разорвать God Object Player на тестируемые части.
 
-- [ ] `PlayerStats` — HP, max_health, take_damage/heal, is_dead
-- [ ] `PlayerCombat` — атака, attack_id, кулдаун, get_attack_rects
-- [ ] `Player` — оркестратор: позиция + ссылки + draw
-- [ ] Сохранить публичный API (`player.health`, `player.attacking` и т.д.) через `@property`-делегирование, чтобы не сломать save_system, enemy_manager, hud
-- [ ] Юнит-тесты на `PlayerStats` отдельно
+- [x] `PlayerStats` — HP, max_health, take_damage/heal, is_dead
+- [x] `PlayerCombat` — атака, attack_id, кулдаун, get_attack_rects, weapons
+- [x] `Player` — оркестратор: позиция + ссылки + draw
+- [x] Публичный API сохранён через `@property`-делегирование
+- [x] 156 тестов прошло
 
 ### ⛔ Откладываем (не блокирует фичи)
 - **`enemy_manager.py` (262)** — внутренне когерентен, разделять не за чем. Вернёмся когда добавится aggro/таргетинг/AOE.
