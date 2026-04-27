@@ -147,6 +147,9 @@ jobs:
 
             # 3) fix:/perf:/refactor: → patch
             #    Также: chore(release):, chore(deps):, release: и маркер [release] в теле.
+            #    NB: шаг "Generate grouped changelog" ниже должен группировать
+            #    эти же типы коммитов, иначе релиз может быть создан без
+            #    соответствующих записей в release notes.
             if echo "$SUBJECT" | grep -qE "^(fix|perf|refactor|release)(\([^)]+\))?:" \
                || echo "$SUBJECT" | grep -qE "^chore\((release|deps)\):" \
                || echo "$COMMIT_MSG" | grep -qE "\[release\]"; then
@@ -186,8 +189,8 @@ jobs:
             echo "================================================"
             echo "  Versioning skipped"
             echo "  Commits since $LATEST_TAG: $COMMITS_SINCE_TAG"
-            echo "  All $SKIPPED_COUNT commits were ignored types"
-            echo "  (docs/chore/test/style/ci/build)."
+            echo "  All $SKIPPED_COUNT commits were ignored types or had no"
+            echo "  Conventional Commit prefix (docs/chore/test/style/ci/build)."
             echo ""
             echo "  To force a release, use one of:"
             echo "   • feat: / fix: / perf: / refactor: / release: prefix"

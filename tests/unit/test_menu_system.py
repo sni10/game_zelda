@@ -63,7 +63,7 @@ class TestMainMenu(unittest.TestCase):
     def test_menu_initialization_no_saves(self):
         """Тест инициализации меню без сохранений"""
         menu = MainMenu()
-        expected_items = ["Новая игра", "Выход"]
+        expected_items = ["Новая игра", "Сохранить игру", "Выход"]
         self.assertEqual(menu.menu_items, expected_items)
         self.assertEqual(menu.selected_index, 0)
     
@@ -81,7 +81,7 @@ class TestMainMenu(unittest.TestCase):
         self.mock_listdir.return_value = ["quicksave.json"]
         
         menu = MainMenu()
-        expected_items = ["Новая игра", "Продолжить игру", "Загрузить игру", "Выход"]
+        expected_items = ["Новая игра", "Продолжить игру", "Загрузить игру", "Сохранить игру", "Выход"]
         self.assertEqual(menu.menu_items, expected_items)
     
     def test_menu_initialization_with_saves_no_quicksave(self):
@@ -97,7 +97,7 @@ class TestMainMenu(unittest.TestCase):
         self.mock_listdir.return_value = ["save1.json", "save2.json"]
         
         menu = MainMenu()
-        expected_items = ["Новая игра", "Загрузить игру", "Выход"]
+        expected_items = ["Новая игра", "Загрузить игру", "Сохранить игру", "Выход"]
         self.assertEqual(menu.menu_items, expected_items)
     
     def test_navigation_up(self):
@@ -259,7 +259,7 @@ class TestMainMenu(unittest.TestCase):
             menu.draw(screen)
             
             # Проверяем, что меню обновилось
-            expected_items = ["Новая игра", "Продолжить игру", "Загрузить игру", "Выход"]
+            expected_items = ["Новая игра", "Продолжить игру", "Загрузить игру", "Сохранить игру", "Выход"]
             self.assertEqual(menu.menu_items, expected_items)
     
     def test_has_saves_method(self):
