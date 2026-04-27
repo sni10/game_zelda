@@ -147,6 +147,9 @@ jobs:
 
             # 3) fix:/perf:/refactor: → patch
             #    Также: chore(release):, chore(deps):, release: и маркер [release] в теле.
+            #    NB: шаг "Generate grouped changelog" ниже должен группировать
+            #    эти же типы коммитов, иначе релиз может быть создан без
+            #    соответствующих записей в release notes.
             if echo "$SUBJECT" | grep -qE "^(fix|perf|refactor|release)(\([^)]+\))?:" \
                || echo "$SUBJECT" | grep -qE "^chore\((release|deps)\):" \
                || echo "$COMMIT_MSG" | grep -qE "\[release\]"; then
