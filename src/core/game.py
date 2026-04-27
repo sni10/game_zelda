@@ -178,9 +178,8 @@ class Game:
         elif event.key == pygame.K_F9:
             self.quickload()
         elif event.key == pygame.K_ESCAPE:
+            # Переходим в меню паузы без установки неиспользуемого флага.
             self.state = GameState.MENU
-            # Сообщаем меню, что игра в паузе — появится пункт "Сохранить игру"
-            self.menu.set_game_in_progress(True)
         # Выбор оружия по 1..5 (соответствует Player.weapons)
         elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3,
                            pygame.K_4, pygame.K_5):
