@@ -162,7 +162,7 @@ class Game:
             # v0.3.2 — открываем полноценное меню слотов
             self._open_load_menu()
         elif action == "save_game":
-            # Пункт виден только когда идёт активная игра (пауза по ESC)
+            # Открываем меню сохранения из главного меню.
             self._open_save_menu_from_main_menu()
         elif action == "exit":
             self.running = False
