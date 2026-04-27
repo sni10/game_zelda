@@ -8,6 +8,8 @@ class MainMenu:
         # Базовые пункты меню
         self.base_menu_items = ["Новая игра"]
         self.selected_index = 0
+        # Флаг: идёт ли активная игра (главное меню работает и как пауза по ESC)
+        self.game_in_progress = False
         self.font = pygame.font.Font(None, 48)
         self.title_font = pygame.font.Font(None, 72)
         
@@ -38,6 +40,14 @@ class MainMenu:
         """Проверяет наличие quicksave файла"""
         return os.path.exists("saves/quicksave.json")
     
+    def set_game_in_progress(self, value: bool) -> None:
+        """Сообщает меню, что в данный момент запущена игра (пауза по ESC).
+
+        Влияет на наличие пункта 'Сохранить игру'.
+        """
+        self.game_in_progress = bool(value)
+        self.update_menu_items()
+
     def update_menu_items(self):
         """Обновляет список пунктов меню в зависимости от наличия сохранений"""
         self.menu_items = ["Новая игра"]
@@ -49,7 +59,11 @@ class MainMenu:
         # Добавляем "Загрузить игру" если есть любые сохранения
         if self.has_saves():
             self.menu_items.append("Загрузить игру")
-        
+
+        # "Сохранить игру" — показываем всегда; при отсутствии активной игры
+        # обработчик в Game покажет сообщение и не откроет меню сохранения.
+        self.menu_items.append("Сохранить игру")
+
         # Всегда добавляем "Выход"
         self.menu_items.append("Выход")
         
@@ -81,6 +95,8 @@ class MainMenu:
             return "continue_game"
         elif selected_item == "Загрузить игру":
             return "load_game"
+        elif selected_item == "Сохранить игру":
+            return "save_game"
         elif selected_item == "Выход":
             return "exit"
         

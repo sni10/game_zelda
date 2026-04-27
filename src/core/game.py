@@ -161,6 +161,9 @@ class Game:
         elif action == "load_game":
             # v0.3.2 — открываем полноценное меню слотов
             self._open_load_menu()
+        elif action == "save_game":
+            # Открываем меню сохранения из главного меню.
+            self._open_save_menu_from_main_menu()
         elif action == "exit":
             self.running = False
 
@@ -175,6 +178,7 @@ class Game:
         elif event.key == pygame.K_F9:
             self.quickload()
         elif event.key == pygame.K_ESCAPE:
+            # Переходим в меню паузы без установки неиспользуемого флага.
             self.state = GameState.MENU
         # Выбор оружия по 1..5 (соответствует Player.weapons)
         elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3,
@@ -210,6 +214,19 @@ class Game:
             return
         self._ensure_save_load_menu(SaveLoadMenu.MODE_SAVE)
         self._save_menu_return_state = GameState.PLAYING
+        self.state = GameState.SAVE_MENU
+
+    def _open_save_menu_from_main_menu(self):
+        """Открыть меню сохранения из главного меню (после ESC).
+
+        Отличается от ``_open_save_menu`` только тем, что после выхода возвращаемся
+        в главное меню, а не сразу в игру.
+        """
+        if not self.player or not self.world:
+            print("Нет активной игры для сохранения!")
+            return
+        self._ensure_save_load_menu(SaveLoadMenu.MODE_SAVE)
+        self._save_menu_return_state = GameState.MENU
         self.state = GameState.SAVE_MENU
 
     def _handle_save_load_menu_key(self, event):
