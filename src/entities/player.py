@@ -1,8 +1,8 @@
 import pygame
 import math
 from src.core.config_loader import get_config, get_color
-from src.entities.weapons import Weapon, default_loadout
-from src.entities.player_stats import PlayerStats
+from src.entities.weapons import Weapon
+from src.entities.player_stats import PlayerStats, unlocked_weapon_slots
 from src.entities.player_combat import PlayerCombat
 
 
@@ -30,6 +30,9 @@ class Player:
         # Делегаты: здоровье и боевая система
         self._stats = PlayerStats(get_config('PLAYER_MAX_HEALTH'))
         self._combat = PlayerCombat()
+        # Разлочка слотов оружия по уровню - PlayerStats не знает про
+        # PlayerCombat, поэтому дёргает Player через колбэк.
+        self._stats.on_level_up = self._handle_level_up
 
         # Cooldown урона от окружения
         self.last_damage_time = 0
@@ -167,6 +170,19 @@ class Player:
 
     def switch_weapon(self, index: int) -> bool:
         return self._combat.switch_weapon(index)
+
+    def cycle_slot_weapon(self, index: int) -> bool:
+        return self._combat.cycle_slot_weapon(index)
+
+    def unlock_slot(self) -> bool:
+        return self._combat.unlock_slot()
+
+    def _handle_level_up(self, new_level: int) -> None:
+        """Колбэк из PlayerStats: открыть слоты оружия, положенные по уровню."""
+        target = unlocked_weapon_slots(new_level)
+        while len(self._combat.weapons) < target:
+            if not self._combat.unlock_slot():
+                break
 
     def try_attack(self):
         self._combat.try_attack()

@@ -15,6 +15,7 @@ import pygame
 from src.entities.weapons import (
     MeleeWeapon, PolearmWeapon, RangedWeapon, AoeWeapon,
     DIRECTION_VECTORS, _rect_in_direction,
+    WEAPON_CATALOG, create_weapon, starting_slot_assignment,
 )
 
 
@@ -169,4 +170,91 @@ class TestPlayerWeaponSwitching:
     def test_switch_to_same_weapon_returns_false(self, player):
         # Уже на 0 - повторный выбор 0 не считается переключением
         assert player.switch_weapon(0) is False
+
+
+# --- Каталог оружия и стабильные id -----------------------------------------
+
+class TestWeaponCatalog:
+    """WEAPON_CATALOG - единственный источник правды для id/создания оружия."""
+
+    def test_catalog_ids(self):
+        assert set(WEAPON_CATALOG) == {"sword", "spear", "rifle", "bomb"}
+
+    def test_create_weapon_by_id(self):
+        w = create_weapon("rifle")
+        assert isinstance(w, RangedWeapon)
+        assert w.weapon_id == "rifle"
+        assert w.category == "ranged"
+
+    def test_weapon_categories(self):
+        assert MeleeWeapon.category == "melee"
+        assert PolearmWeapon.category == "melee"
+        assert RangedWeapon.category == "ranged"
+        assert AoeWeapon.category == "ranged"
+
+    def test_starting_slot_assignment_is_two_melee(self):
+        assert starting_slot_assignment() == ["sword", "spear"]
+
+
+# --- Гибкие слоты (2 -> 8 по уровню, свободное назначение) ------------------
+
+class TestFlexibleWeaponSlots:
+    """PlayerCombat.unlock_slot / cycle_slot_weapon (см. player_combat.py)."""
+
+    @pytest.fixture
+    def player(self):
+        from src.entities.player import Player
+        return Player(100, 100)
+
+    def test_starts_with_two_slots(self, player):
+        assert len(player.weapons) == 2
+        assert [w.weapon_id for w in player.weapons] == ["sword", "spear"]
+
+    def test_unlock_slot_grows_list(self, player):
+        assert player.unlock_slot() is True
+        assert len(player.weapons) == 3
+
+    def test_unlock_slot_capped_at_eight(self, player):
+        for _ in range(10):
+            player.unlock_slot()
+        assert len(player.weapons) == 8
+        assert player.unlock_slot() is False
+
+    def test_cycle_slot_weapon_advances_catalog_order(self, player):
+        assert player.weapons[0].weapon_id == "sword"
+        assert player.cycle_slot_weapon(0) is True
+        assert player.weapons[0].weapon_id == "spear"
+
+    def test_cycle_wraps_around_full_catalog(self, player):
+        # sword -> spear -> rifle -> bomb -> sword (4 записи в каталоге)
+        for _ in range(len(WEAPON_CATALOG)):
+            player.cycle_slot_weapon(0)
+        assert player.weapons[0].weapon_id == "sword"
+
+    def test_cycle_blocked_during_attack(self, player):
+        player.attacking = True
+        assert player.cycle_slot_weapon(0) is False
+
+    def test_cycle_out_of_range_rejected(self, player):
+        assert player.cycle_slot_weapon(5) is False  # слот ещё не разлочен
+
+    def test_switch_to_locked_slot_rejected(self, player):
+        # Только 2 слота есть - индекс 2 ещё не существует
+        assert player.switch_weapon(2) is False
+
+
+class TestWeaponSlotUnlockOnLevelUp:
+    """Разлочка слотов должна следовать config.ini weapon_slot_unlock_levels."""
+
+    @pytest.fixture
+    def player(self):
+        from src.entities.player import Player
+        return Player(100, 100)
+
+    def test_slots_unlock_as_player_levels(self, player):
+        from src.entities.player_stats import unlocked_weapon_slots
+        player.stats.gain_xp(1_000_000)  # разом до max_level
+        expected = unlocked_weapon_slots(player.level)
+        assert expected > 2  # хотя бы один уровень разлочки пройден
+        assert len(player.weapons) == expected
 

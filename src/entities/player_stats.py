@@ -25,6 +25,10 @@ class PlayerStats:
         self.xp = 0
         self.coins = 0
         self.damage_bonus = 0
+        # Колбэк(new_level) - дёргается из _level_up(). Используется Player
+        # чтобы разлочивать слоты оружия, не давая PlayerStats знать про
+        # PlayerCombat напрямую.
+        self.on_level_up = None
 
         # Конфиг прогрессии (кеш)
         self._xp_base = get_config('PROGRESSION_XP_BASE', 20)
@@ -100,6 +104,8 @@ class PlayerStats:
         self.damage_bonus += self._damage_per_level
         if self._heal_on_level_up:
             self.health = self.max_health
+        if self.on_level_up:
+            self.on_level_up(self.level)
 
     def add_coins(self, amount: int) -> None:
         self.coins += amount
@@ -111,3 +117,16 @@ def xp_for_next_level(level: int, xp_base: int = 20,
                       xp_growth: float = 1.5) -> int:
     """Формула XP до следующего уровня: base * (level ** growth)."""
     return int(xp_base * (level ** xp_growth))
+
+
+def unlocked_weapon_slots(level: int, unlock_levels=None) -> int:
+    """Сколько слотов оружия должно быть открыто на данном уровне.
+
+    Старт - 2 слота (мечи). За каждый уровень из unlock_levels
+    (config.ini [progression] weapon_slot_unlock_levels) открывается +1,
+    максимум ограничен MAX_WEAPON_SLOTS в PlayerCombat (сейчас 8, при 6
+    уровнях разлочки 3..8 ровно совпадает).
+    """
+    if unlock_levels is None:
+        unlock_levels = get_config('PROGRESSION_WEAPON_SLOT_UNLOCK_LEVELS', ())
+    return 2 + sum(1 for lvl in unlock_levels if level >= lvl)

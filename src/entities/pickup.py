@@ -105,11 +105,21 @@ class CoinPickup(Pickup):
 
 
 class XPOrbPickup(Pickup):
-    """Даёт XP."""
+    """Даёт XP.
+
+    amount - явное количество XP (например, с учётом бонуса ближнего боя
+    в enemy_manager). Если не передано - берётся дефолт из конфига
+    (обратная совместимость со старыми сейвами/вызовами).
+    """
+
+    def __init__(self, x: float, y: float, amount: int = None):
+        super().__init__(x, y)
+        self.amount = (
+            amount if amount is not None else get_config('PICKUPS_XP_ORB_VALUE', 5)
+        )
 
     def apply(self, player) -> None:
-        amount = get_config('PICKUPS_XP_ORB_VALUE', 5)
-        player.stats.gain_xp(amount)
+        player.stats.gain_xp(self.amount)
 
     def draw(self, screen, camera_x, camera_y):
         sx = int(self.x - camera_x) + self.SIZE // 2

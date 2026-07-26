@@ -13,7 +13,7 @@
   только нужные параметры или метод get_attack_rects().
 """
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Dict, List, Tuple, Type
 import math
 import pygame
 
@@ -68,6 +68,11 @@ class Weapon(ABC):
     # Метаданные для UI/логов
     name: str = "Weapon"
     color: Tuple[int, int, int] = (255, 255, 0)  # цвет зоны атаки в HUD
+    # Стабильный ключ для каталога/сохранений (не меняется при рефакторинге
+    # display-имени). Category используется для бонуса ближнего боя и как
+    # задел под будущие теги/схемы оружия (модули, аффиксы).
+    weapon_id: str = ""
+    category: str = "melee"  # "melee" | "ranged"
 
     # Параметры зоны поражения (одна клетка-rect)
     reach: int = 0          # зазор от игрока, px (0 = впритык)
@@ -89,6 +94,8 @@ class Weapon(ABC):
 class MeleeWeapon(Weapon):
     """Меч: ближний бой, зона атаки впритык к игроку (reach=0)."""
     name = "Sword"
+    weapon_id = "sword"
+    category = "melee"
     color = (255, 255, 0)        # жёлтая
     reach = 0
     rect_width = 32
@@ -107,6 +114,8 @@ class MeleeWeapon(Weapon):
 class PolearmWeapon(Weapon):
     """Копьё/яри: средний бой, отступ в полклетки от игрока."""
     name = "Spear"
+    weapon_id = "spear"
+    category = "melee"
     color = (180, 220, 255)      # светло-голубая
     reach = 16
     rect_width = 32
@@ -121,12 +130,15 @@ class PolearmWeapon(Weapon):
 
 
 class RangedWeapon(Weapon):
-    """Лук/стрельба: дальний бой, удар на 2-3 клетки впереди.
+    """Стрелковое оружие: дальний бой, удар на 2-3 клетки впереди.
 
-    Атака представлена линией из 3 клеток подряд - имитация "трассы стрелы".
-    Каждый враг, попавший хоть в одну клетку трассы, получает 1 удар.
+    Пока механика та же, что и была у "Bow" - мгновенная линия из 3 клеток
+    ("трасса"). Реальная баллистика (пули с полётом, боезапас, перезарядка)
+    - отдельный последующий PR, эта категория лишь задел под него.
     """
-    name = "Bow"
+    name = "Rifle"
+    weapon_id = "rifle"
+    category = "ranged"
     color = (255, 160, 60)       # оранжевая
     reach = 0  # не используется напрямую - своя логика трассы
     rect_width = 32
@@ -158,6 +170,8 @@ class AoeWeapon(Weapon):
     Урон = 3 - убивает Heavy с одного попадания, Light/Fast - тем более.
     """
     name = "Bomb"
+    weapon_id = "bomb"
+    category = "ranged"
     color = (255, 80, 80)        # красная
     reach = 48  # 1.5 клетки до центра взрыва
     rect_width = 96   # 3 клетки
@@ -171,12 +185,25 @@ class AoeWeapon(Weapon):
                                    self.reach, self.rect_width, self.rect_height)]
 
 
-def default_loadout() -> List[Weapon]:
-    """Стандартный набор оружий игрока (порядок == клавиши 1..N)."""
-    return [
-        MeleeWeapon(),    # 1
-        PolearmWeapon(),  # 2
-        RangedWeapon(),   # 3
-        AoeWeapon(),      # 4
-    ]
+# Каталог всех доступных типов оружия по стабильному weapon_id.
+# Порядок словаря = порядок циклической смены оружия в слоте (см.
+# PlayerCombat.cycle_slot_weapon). Единственный источник правды и для
+# создания оружия по id (сохранения), и для стартовой раскладки.
+WEAPON_CATALOG: Dict[str, Type[Weapon]] = {
+    "sword": MeleeWeapon,
+    "spear": PolearmWeapon,
+    "rifle": RangedWeapon,
+    "bomb": AoeWeapon,
+}
+
+
+def create_weapon(weapon_id: str) -> Weapon:
+    """Создать экземпляр оружия по стабильному id из WEAPON_CATALOG."""
+    return WEAPON_CATALOG[weapon_id]()
+
+
+def starting_slot_assignment() -> List[str]:
+    """Стартовая раскладка слотов нового игрока: 2 слота, оба - мечи
+    (ближний бой)."""
+    return ["sword", "spear"]
 

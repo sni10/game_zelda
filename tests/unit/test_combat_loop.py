@@ -234,3 +234,60 @@ class TestDropLoot:
         enemy.take_damage(1)
         em.update(0.1)  # Не должен крашнуться
 
+
+class TestMeleeKillBonus:
+    """Ближний бой (is_melee=True в apply_player_attack) даёт больше
+    XP/монет с врага - см. config.ini [progression] melee_kill_bonus_multiplier."""
+
+    def _kill_light_enemy(self, enemy_manager, pickup_manager, is_melee):
+        pickup_manager.pickups.clear()
+        stats = EnemyStats(
+            name='Light', max_health=1, speed=80,
+            width=24, height=24, color=(200, 80, 80), damage=5
+        )
+        zone = pygame.Rect(400, 400, 200, 200)
+        enemy = Enemy(500, 500, stats, IdleBehavior(), zone)
+        enemy_manager.enemies.append(enemy)
+        player = MagicMock()
+        player.x, player.y = 0.0, 0.0
+        player.health = 10
+        player.max_health = 10  # полное HP -> монеты, не сердечки
+        enemy_manager.apply_player_attack(
+            1, [enemy.rect], 1, player=player, is_melee=is_melee
+        )
+        enemy_manager.update(0.1, player_x=0, player_y=0, player=player)
+
+    def test_melee_kill_grants_more_xp(self, enemy_manager, pickup_manager):
+        from src.entities.pickup import XPOrbPickup
+
+        self._kill_light_enemy(enemy_manager, pickup_manager, is_melee=True)
+        melee_orbs = [p for p in pickup_manager.pickups if isinstance(p, XPOrbPickup)]
+        assert len(melee_orbs) == 1
+        melee_xp = melee_orbs[0].amount
+
+        self._kill_light_enemy(enemy_manager, pickup_manager, is_melee=False)
+        ranged_orbs = [p for p in pickup_manager.pickups if isinstance(p, XPOrbPickup)]
+        assert len(ranged_orbs) == 1
+        ranged_xp = ranged_orbs[0].amount
+
+        assert melee_xp > ranged_xp
+
+    def test_melee_kill_grants_more_coins(self, enemy_manager, pickup_manager):
+        """random.random/randint зафиксированы - единственная разница между
+        двумя убийствами - is_melee, значит и разница в монетах - от бонуса."""
+        from src.entities.pickup import CoinPickup
+
+        with patch('random.random', return_value=0.0), \
+                patch('random.randint', return_value=2):
+            self._kill_light_enemy(enemy_manager, pickup_manager, is_melee=True)
+            melee_coins = sum(
+                1 for p in pickup_manager.pickups if isinstance(p, CoinPickup)
+            )
+
+            self._kill_light_enemy(enemy_manager, pickup_manager, is_melee=False)
+            ranged_coins = sum(
+                1 for p in pickup_manager.pickups if isinstance(p, CoinPickup)
+            )
+
+        assert melee_coins > ranged_coins
+
