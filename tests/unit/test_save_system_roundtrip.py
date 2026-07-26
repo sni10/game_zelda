@@ -77,7 +77,11 @@ def test_player_roundtrip_full(tmp_save_system):
     p.stats.coins = 99
     p.stats.damage_bonus = 2
     p.stats.iframe_timer = 0.42
-    p.current_weapon_index = 2  # bow
+    # Открываем 3-й слот и крутим его до "rifle" (sword -> spear -> rifle)
+    p.unlock_slot()
+    p.cycle_slot_weapon(2)
+    p.cycle_slot_weapon(2)
+    p.current_weapon_index = 2  # rifle
 
     assert tmp_save_system.save_game(p, world) is True
     data = tmp_save_system.load_game()
@@ -96,6 +100,7 @@ def test_player_roundtrip_full(tmp_save_system):
     assert p2.stats.coins == 99
     assert p2.stats.damage_bonus == 2
     assert p2.stats.iframe_timer == pytest.approx(0.42)
+    assert [w.weapon_id for w in p2.weapons] == ["sword", "spear", "rifle"]
     assert p2.current_weapon_index == 2
 
 

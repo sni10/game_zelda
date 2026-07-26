@@ -48,12 +48,15 @@ class PickupManager:
             tid = _PICKUP_TYPE_IDS.get(type(p))
             if tid is None:
                 continue  # неизвестный тип — пропускаем
-            out.append({
+            entry = {
                 "type": tid,
                 "x": float(p.x),
                 "y": float(p.y),
                 "lifetime": float(p.lifetime),
-            })
+            }
+            if hasattr(p, "amount"):
+                entry["amount"] = int(p.amount)
+            out.append(entry)
         return out
 
     def deserialize(self, data: list) -> None:
@@ -69,5 +72,7 @@ class PickupManager:
             p = cls(float(item.get("x", 0)), float(item.get("y", 0)))
             if "lifetime" in item:
                 p.lifetime = float(item["lifetime"])
+            if "amount" in item and hasattr(p, "amount"):
+                p.amount = int(item["amount"])
             self.pickups.append(p)
 

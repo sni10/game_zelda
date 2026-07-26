@@ -6,8 +6,16 @@ Single Responsibility: управлять атакой (старт, таймер
 """
 import pygame
 
-from src.entities.weapons import Weapon, default_loadout
+from src.entities.weapons import (
+    Weapon,
+    WEAPON_CATALOG,
+    create_weapon,
+    starting_slot_assignment,
+)
 from typing import List
+
+# Максимум слотов оружия, открываемых прокачкой (см. PlayerStats.unlocked_weapon_slots).
+MAX_WEAPON_SLOTS = 8
 
 
 class PlayerCombat:
@@ -22,8 +30,11 @@ class PlayerCombat:
         # у каждого врага, чтобы 1 атака = 1 урон (атака длится несколько кадров).
         self.attack_id = 0
 
-        # Инвентарь оружий
-        self.weapons: List[Weapon] = default_loadout()
+        # Инвентарь оружий: стартует с 2 слотов (мечи), растёт до
+        # MAX_WEAPON_SLOTS по мере разлочки уровнями (см. unlock_slot()).
+        self.weapons: List[Weapon] = [
+            create_weapon(wid) for wid in starting_slot_assignment()
+        ]
         self.current_weapon_index = 0
 
     @property
@@ -39,6 +50,31 @@ class PlayerCombat:
             self.current_weapon_index = index
             return True
         return False
+
+    def cycle_slot_weapon(self, index: int) -> bool:
+        """Сменить тип оружия в слоте index на следующий по кругу из каталога.
+
+        Свободное назначение: любой слот может держать любое оружие из
+        WEAPON_CATALOG, без привязки к melee/ranged. Возвращает True если
+        смена произошла."""
+        if self.attacking:
+            return False
+        if not (0 <= index < len(self.weapons)):
+            return False
+        catalog_ids = list(WEAPON_CATALOG)
+        current_id = self.weapons[index].weapon_id
+        next_index = (catalog_ids.index(current_id) + 1) % len(catalog_ids)
+        self.weapons[index] = create_weapon(catalog_ids[next_index])
+        return True
+
+    def unlock_slot(self) -> bool:
+        """Открыть новый слот оружия (до MAX_WEAPON_SLOTS), заполнив его
+        первым оружием из каталога. Возвращает True если слот добавлен."""
+        if len(self.weapons) >= MAX_WEAPON_SLOTS:
+            return False
+        first_id = next(iter(WEAPON_CATALOG))
+        self.weapons.append(create_weapon(first_id))
+        return True
 
     def try_attack(self) -> None:
         """Попытка атаки с учётом cooldown текущего оружия."""

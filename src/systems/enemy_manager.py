@@ -183,12 +183,16 @@ class EnemyManager:
     def apply_player_attack(self, attack_id: int,
                             attack_rects: List[pygame.Rect],
                             damage: int,
-                            player=None) -> Tuple[int, int]:
+                            player=None,
+                            is_melee: bool = False) -> Tuple[int, int]:
         """Нанести урон врагам, которых задевают зоны атаки.
 
         attack_id - уникальный идентификатор текущей атаки игрока,
                     нужен чтобы не наносить урон одной атакой каждый кадр.
                     Один враг получит урон от одной atак_id максимум один раз.
+        is_melee - категория оружия, которым нанесён урон (Weapon.category
+                    == "melee"). Пробрасывается в дроп-луты для бонуса
+                    ближнего боя (см. _drop_loot_from_dead).
 
         Возвращает (hits, kills).
         """
@@ -211,6 +215,8 @@ class EnemyManager:
                 if r.colliderect(enemy.rect):
                     enemy.take_damage(damage)
                     enemy.last_hit_attack_id = attack_id
+                    if is_melee:
+                        enemy._hit_by_melee = True
                     # Knockback от игрока
                     if player is not None:
                         dx = enemy.x - player.x
@@ -309,12 +315,23 @@ class EnemyManager:
         prefix = enemy.stats.name.lower()  # light / heavy / fast
         cx, cy = enemy.x, enemy.y
 
-        # XP — всегда (фиксированное количество)
-        xp_amount = get_config(f'DROPS_{prefix.upper()}_XP_AMOUNT', 0)
+        # Бонус ближнего боя: убийство мечом даёт больше XP/монет (только
+        # количество, не шанс дропа). См. config.ini [progression]
+        # melee_kill_bonus_multiplier.
+        bonus_mult = (
+            get_config('PROGRESSION_MELEE_KILL_BONUS_MULTIPLIER', 1.0)
+            if getattr(enemy, '_hit_by_melee', False) else 1.0
+        )
+
+        # XP — всегда (фиксированное количество, с бонусом ближнего боя).
+        # ceil (не round) - чтобы бонус всегда был виден хотя бы на 1 единицу,
+        # а не терялся округлением на маленьких значениях (1-2 ед.).
+        xp_amount = int(math.ceil(get_config(f'DROPS_{prefix.upper()}_XP_AMOUNT', 0) * bonus_mult))
         if xp_amount > 0:
             self.pickup_manager.spawn(
                 XPOrbPickup(cx + random.uniform(-8, 8),
-                            cy + random.uniform(-8, 8))
+                            cy + random.uniform(-8, 8),
+                            amount=xp_amount)
             )
 
         # Определяем что дропать: сердечки или монеты
@@ -337,7 +354,7 @@ class EnemyManager:
             if random.random() < coin_chance:
                 coin_min = get_config(f'DROPS_{prefix.upper()}_COIN_MIN', 1)
                 coin_max = get_config(f'DROPS_{prefix.upper()}_COIN_MAX', 1)
-                count = random.randint(coin_min, coin_max)
+                count = int(math.ceil(random.randint(coin_min, coin_max) * bonus_mult))
                 for _ in range(count):
                     self.pickup_manager.spawn(
                         CoinPickup(cx + random.uniform(-12, 12),

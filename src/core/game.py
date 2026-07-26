@@ -128,7 +128,8 @@ class Game:
         self.hud = HUD()
 
         print("Игра запущена. WASD/стрелки - движение, Space - атака, "
-              "1..4 - оружие, F1 - debug, F5 - quicksave, F6 - save menu, "
+              "1..8 - слот оружия, Tab - сменить оружие в слоте, "
+              "F1 - debug, F5 - quicksave, F6 - save menu, "
               "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
 
@@ -180,9 +181,10 @@ class Game:
         elif event.key == pygame.K_ESCAPE:
             # Переходим в меню паузы без установки неиспользуемого флага.
             self.state = GameState.MENU
-        # Выбор оружия по 1..5 (соответствует Player.weapons)
-        elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3,
-                           pygame.K_4, pygame.K_5):
+        # Выбор слота оружия по 1..8 (соответствует Player.weapons,
+        # растёт от 2 до 8 по мере разлочки уровнями)
+        elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
+                           pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8):
             if self.player:
                 idx = event.key - pygame.K_1
                 if self.player.switch_weapon(idx):
@@ -190,6 +192,17 @@ class Game:
                     self.log(
                         f"🗡️ [{idx + 1}] Оружие: {w.name} "
                         f"(reach={w.reach}, dmg={w.damage})",
+                        "IMPORTANT",
+                    )
+        elif event.key == pygame.K_TAB:
+            # Сменить тип оружия в текущем выбранном слоте по кругу
+            # (свободное назначение - любое оружие из каталога в любой слот).
+            if self.player:
+                idx = self.player.current_weapon_index
+                if self.player.cycle_slot_weapon(idx):
+                    w = self.player.current_weapon
+                    self.log(
+                        f"🔄 [{idx + 1}] Оружие сменено на: {w.name}",
                         "IMPORTANT",
                     )
 
@@ -378,6 +391,7 @@ class Game:
                 self.player.get_attack_rects(),
                 weapon.damage + self.player.damage_bonus,
                 player=self.player,
+                is_melee=(weapon.category == "melee"),
             )
             if kills > 0 and self.game_stats:
                 for _ in range(kills):
@@ -436,7 +450,7 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD | Shift | Space | 1..4 | F1 - Debug | "
+                    "WASD | Shift | Space | 1..8 | Tab - Cycle | F1 - Debug | "
                     "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
@@ -466,7 +480,8 @@ class Game:
             f"Pickups: {self.pickup_manager.count() if self.pickup_manager else 0}",
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
-            "Controls: WASD - Move, Shift - Sprint, Space - Attack, 1..4 - Weapon",
+            "Controls: WASD - Move, Shift - Sprint, Space - Attack, "
+            "1..8 - Weapon slot, Tab - Cycle weapon in slot",
             "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10
