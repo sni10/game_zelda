@@ -114,6 +114,15 @@ class HUD:
         name_surf = self._font_name.render(active.name, True, get_color('WHITE'))
         screen.blit(name_surf, (start_x, start_y + slot_size + 4))
 
+        # Патроны (магазин/резерв) - только у оружия с ammo_type, справа от имени
+        if getattr(active, 'ammo_type', None):
+            ammo_text = f"{player.magazine_count()}/{player.reserve_count()}"
+            ammo_surf = self._font_name.render(ammo_text, True, (220, 200, 140))
+            screen.blit(
+                ammo_surf,
+                (start_x + name_surf.get_width() + 12, start_y + slot_size + 4),
+            )
+
     def _draw_coins(self, screen: pygame.Surface, player) -> None:
         """Счётчик монет в правом верхнем углу (ниже миникарты)."""
         coins = player.coins

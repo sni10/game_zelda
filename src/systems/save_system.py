@@ -27,13 +27,14 @@ class SaveValidationError(ValueError):
 class SaveSystem:
     """Система сохранения и загрузки игрового прогресса."""
 
-    SAVE_VERSION = "1.2"
+    SAVE_VERSION = "1.3"
 
     # Версии, с которыми мы умеем работать на загрузке.
     # 1.0 — старый формат без enemies/pickups/game_stats/weapon_index.
     # 1.1 — добавлены enemies/pickups/game_stats/current_weapon_index.
     # 1.2 — добавлены гибкие слоты оружия (weapon_slots).
-    SUPPORTED_VERSIONS = {"1.0", "1.1", "1.2"}
+    # 1.3 — добавлены патроны (ammo: magazine/reserve).
+    SUPPORTED_VERSIONS = {"1.0", "1.1", "1.2", "1.3"}
 
     # Обязательные верхнеуровневые ключи в save_data
     _REQUIRED_TOP_KEYS = ("version", "player")
@@ -228,6 +229,9 @@ class SaveSystem:
         weapon_slots = player.get("weapon_slots")
         if weapon_slots is not None and not isinstance(weapon_slots, list):
             raise SaveValidationError("player['weapon_slots'] должно быть списком")
+        ammo = player.get("ammo")
+        if ammo is not None and not isinstance(ammo, dict):
+            raise SaveValidationError("player['ammo'] должно быть объектом")
 
     # --- Сериализация ------------------------------------------------------
 
@@ -246,6 +250,10 @@ class SaveSystem:
             "current_weapon_index": int(getattr(player, "current_weapon_index", 0)),
             "iframe_timer": float(getattr(player.stats, "iframe_timer", 0.0)),
             "weapon_slots": [w.weapon_id for w in getattr(player, "weapons", [])],
+            "ammo": {
+                "magazine": dict(getattr(player, "magazine", {})),
+                "reserve": dict(getattr(player, "reserve", {})),
+            },
         }
 
     def _serialize_world(self, world):
@@ -295,6 +303,16 @@ class SaveSystem:
                 while len(player.weapons) < target:
                     if not player.unlock_slot():
                         break
+
+            # Патроны — если в сейве нет ключа (версия < 1.3), оставляем
+            # дефолтный стартовый боезапас из PlayerCombat.__init__ как есть
+            # (в отличие от weapon_slots, тут нет зависимости от уровня).
+            ammo_data = player_data.get("ammo")
+            if ammo_data:
+                player.magazine.clear()
+                player.magazine.update(ammo_data.get("magazine", {}))
+                player.reserve.clear()
+                player.reserve.update(ammo_data.get("reserve", {}))
 
             # Активное оружие — выставляем напрямую, без switch_weapon
             # (тот блокирует переключение во время attacking и при том же

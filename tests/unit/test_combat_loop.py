@@ -291,3 +291,55 @@ class TestMeleeKillBonus:
 
         assert melee_coins > ranged_coins
 
+
+class TestAmmoDrop:
+    """Патроны с врагов (v0.4.0b) - независимая ветка от heal/coin."""
+
+    def _kill_light_enemy(self, enemy_manager, pickup_manager, player=None):
+        stats = EnemyStats(
+            name='Light', max_health=1, speed=80,
+            width=24, height=24, color=(200, 80, 80), damage=5
+        )
+        zone = pygame.Rect(400, 400, 200, 200)
+        enemy = Enemy(500, 500, stats, IdleBehavior(), zone)
+        enemy_manager.enemies.append(enemy)
+        enemy_manager.apply_player_attack(1, [enemy.rect], 1, player=player)
+        enemy_manager.update(0.1, player_x=0, player_y=0, player=player)
+
+    def test_ammo_drops_when_chance_triggers(self, enemy_manager, pickup_manager):
+        from src.entities.pickup import AmmoPickup
+
+        with patch('random.random', return_value=0.0):  # проходит любой chance-ролл
+            self._kill_light_enemy(enemy_manager, pickup_manager)
+
+        ammo_pickups = [p for p in pickup_manager.pickups if isinstance(p, AmmoPickup)]
+        assert len(ammo_pickups) == 1
+        assert ammo_pickups[0].ammo_type == "bullets"
+        assert ammo_pickups[0].amount > 0
+
+    def test_ammo_does_not_drop_when_chance_fails(self, enemy_manager, pickup_manager):
+        from src.entities.pickup import AmmoPickup
+
+        with patch('random.random', return_value=0.999):  # заведомо выше любого chance
+            self._kill_light_enemy(enemy_manager, pickup_manager)
+
+        ammo_pickups = [p for p in pickup_manager.pickups if isinstance(p, AmmoPickup)]
+        assert ammo_pickups == []
+
+    def test_ammo_pickup_apply_adds_to_reserve_capped(self):
+        from src.entities.pickup import AmmoPickup
+        from src.entities.player import Player
+
+        player = Player(0, 0)
+        player._combat.reserve["bullets"] = 80
+        pickup = AmmoPickup(0, 0, ammo_type="bullets", amount=50)
+        pickup.apply(player)
+        # config.ini: ammo_rifle_reserve_cap = 90
+        assert player.reserve_count("bullets") == 90
+
+    def test_ammo_pickup_visual_tiers_do_not_crash(self):
+        from src.entities.pickup import AmmoPickup
+        screen = pygame.Surface((200, 200))
+        for amount in (3, 15, 40):
+            AmmoPickup(50, 50, ammo_type="bullets", amount=amount).draw(screen, 0, 0)
+

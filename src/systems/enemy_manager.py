@@ -18,7 +18,7 @@ import pygame
 from src.core.config_loader import get_config
 from src.entities.enemy import Enemy
 from src.entities.enemy_factory import EnemyFactory
-from src.entities.pickup import HeartPickup, CoinPickup, XPOrbPickup
+from src.entities.pickup import HeartPickup, CoinPickup, XPOrbPickup, AmmoPickup
 
 
 class EnemyManager:
@@ -360,6 +360,19 @@ class EnemyManager:
                         CoinPickup(cx + random.uniform(-12, 12),
                                    cy + random.uniform(-12, 12))
                     )
+
+        # Патроны — независимый шанс (не завязан на heal/coin ветвление,
+        # как XP выше). Без бонуса ближнего боя - не в тему бонуса.
+        ammo_chance = get_config(f'DROPS_{prefix.upper()}_AMMO_CHANCE', 0.0)
+        if random.random() < ammo_chance:
+            ammo_min = get_config(f'DROPS_{prefix.upper()}_AMMO_MIN', 1)
+            ammo_max = get_config(f'DROPS_{prefix.upper()}_AMMO_MAX', 1)
+            amount = random.randint(ammo_min, ammo_max)
+            self.pickup_manager.spawn(
+                AmmoPickup(cx + random.uniform(-10, 10),
+                           cy + random.uniform(-10, 10),
+                           ammo_type="bullets", amount=amount)
+            )
 
     # --- Утилиты -----------------------------------------------------------
 

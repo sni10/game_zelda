@@ -20,6 +20,8 @@ from src.ui.save_load_menu import SaveLoadMenu
 from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
+from src.entities.projectile import Projectile
+from src.entities.weapons import DIRECTION_VECTORS
 from src.world.world import World
 from src.systems.save_system import SaveSystem
 from src.systems.pickup_manager import PickupManager
@@ -79,6 +81,11 @@ class Game:
         self._autosave_timer = 0.0
         self._last_known_level = None
 
+        # Баллистика (v0.4.0b): id последней атаки, для которой уже был
+        # заспавнен снаряд - не даёт заспавнить несколько снарядов за одно
+        # нажатие (attacking держится duration_ms, т.е. несколько кадров).
+        self._last_fired_attack_id = -1
+
     # --- Логирование -------------------------------------------------------
 
     def log(self, message, level="INFO"):
@@ -119,6 +126,7 @@ class Game:
         # Сброс автосейв-таймера и базовый уровень для детектора level-up
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
+        self._last_fired_attack_id = -1
 
         # Статистика и Game Over экран
         self.game_stats = GameStats()
@@ -128,7 +136,7 @@ class Game:
         self.hud = HUD()
 
         print("Игра запущена. WASD/стрелки - движение, Space - атака, "
-              "1..8 - слот оружия, Tab - сменить оружие в слоте, "
+              "1..8 - слот оружия, Tab - сменить оружие в слоте, R - перезарядка, "
               "F1 - debug, F5 - quicksave, F6 - save menu, "
               "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
@@ -205,6 +213,15 @@ class Game:
                         f"🔄 [{idx + 1}] Оружие сменено на: {w.name}",
                         "IMPORTANT",
                     )
+        elif event.key == pygame.K_r:
+            # Перезарядка текущего оружия (если у него есть ammo_type)
+            if self.player and self.player.reload():
+                w = self.player.current_weapon
+                self.log(
+                    f"🔃 Перезарядка {w.name}: "
+                    f"{self.player.magazine_count()}/{self.player.reserve_count()}",
+                    "IMPORTANT",
+                )
 
     def _ensure_save_load_menu(self, mode):
         """Создать или переинициализировать SaveLoadMenu в нужном режиме."""
@@ -348,6 +365,7 @@ class Game:
         # триггер не сработал ложно сразу после загрузки.
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
+        self._last_fired_attack_id = -1
         self.state = GameState.PLAYING
 
     def _handle_game_over_key(self, event):
@@ -383,21 +401,40 @@ class Game:
         # Если игрок атакует - применяем урон врагам.
         # apply_player_attack использует attack_id, чтобы 1 атака
         # = 1 урон каждому затронутому врагу (даже если зона держится
-        # 200-400мс на нём).
+        # 200-400мс на нём). Оружие со fires_projectile=True (Rifle) не
+        # бьёт мгновенно - вместо этого спавнит Projectile ровно один раз
+        # за attack_id (см. _last_fired_attack_id), урон наносит сам снаряд
+        # по кадрам в ProjectileManager.
         if self.player.attacking:
             weapon = self.player.current_weapon
-            hits, kills = self.world.enemy_manager.apply_player_attack(
-                self.player.attack_id,
-                self.player.get_attack_rects(),
-                weapon.damage + self.player.damage_bonus,
-                player=self.player,
-                is_melee=(weapon.category == "melee"),
-            )
-            if kills > 0 and self.game_stats:
-                for _ in range(kills):
-                    self.game_stats.record_enemy_kill(weapon.damage)
-            elif hits > 0 and self.game_stats:
-                self.game_stats.record_attack(weapon.damage * hits)
+            if weapon.fires_projectile:
+                if self.player.attack_id != self._last_fired_attack_id:
+                    self._last_fired_attack_id = self.player.attack_id
+                    self._spawn_projectile(weapon)
+            else:
+                hits, kills = self.world.enemy_manager.apply_player_attack(
+                    self.player.attack_id,
+                    self.player.get_attack_rects(),
+                    weapon.damage + self.player.damage_bonus,
+                    player=self.player,
+                    is_melee=(weapon.category == "melee"),
+                )
+                if kills > 0 and self.game_stats:
+                    for _ in range(kills):
+                        self.game_stats.record_enemy_kill(weapon.damage)
+                elif hits > 0 and self.game_stats:
+                    self.game_stats.record_attack(weapon.damage * hits)
+
+        # Снаряды в полёте - двигаем и проверяем столкновения каждый кадр,
+        # независимо от того, атакует ли игрок сейчас (пуля летит и после
+        # окончания attacking-окна).
+        proj_events = self.world.projectile_manager.update(dt)
+        if self.game_stats:
+            for ev in proj_events:
+                if ev["killed"]:
+                    self.game_stats.record_enemy_kill(ev["damage"])
+                else:
+                    self.game_stats.record_attack(ev["damage"])
 
         if self.game_stats:
             self.game_stats.update_position(self.player.x, self.player.y)
@@ -419,6 +456,20 @@ class Game:
             get_config('WIDTH'), get_config('HEIGHT'),
         )
 
+    def _spawn_projectile(self, weapon) -> None:
+        """Создать и заспавнить снаряд в направлении взгляда игрока."""
+        dx, dy = DIRECTION_VECTORS[self.player.facing_direction]
+        cx = self.player.x + self.player.width / 2
+        cy = self.player.y + self.player.height / 2
+        projectile = Projectile(
+            cx, cy, dx, dy,
+            speed=weapon.projectile_speed,
+            damage=weapon.damage + self.player.damage_bonus,
+            max_range=weapon.projectile_max_range,
+            color=weapon.color,
+        )
+        self.world.projectile_manager.spawn(projectile)
+
     # --- Отрисовка ---------------------------------------------------------
 
     def draw(self):
@@ -438,6 +489,10 @@ class Game:
             self.world.enemy_manager.draw(
                 self.screen, self.world.camera_x, self.world.camera_y
             )
+            # 3.5) Летящие снаряды поверх врагов
+            self.world.projectile_manager.draw(
+                self.screen, self.world.camera_x, self.world.camera_y
+            )
             # 4) Игрок поверх врагов
             self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
             # 5) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
@@ -450,8 +505,9 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD | Shift | Space | 1..8 | Tab - Cycle | F1 - Debug | "
-                    "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
+                    "WASD | Shift | Space | 1..8 | Tab - Cycle | R - Reload | "
+                    "F1 - Debug | F5 - Quicksave | F6 - Save menu | "
+                    "F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
 
@@ -473,15 +529,20 @@ class Game:
             f" | Coins: {self.player.coins}",
             f"Direction: {self.player.facing_direction}",
             f"Sprint: {self.player.is_sprinting} (x{self.player.sprint_multiplier})",
-            f"Weapon: {self.player.current_weapon.name} (dmg={self.player.current_weapon.damage}+{self.player.damage_bonus})",
+            f"Weapon: {self.player.current_weapon.name} (dmg={self.player.current_weapon.damage}+{self.player.damage_bonus})"
+            + (
+                f" | Ammo: {self.player.magazine_count()}/{self.player.reserve_count()}"
+                if self.player.current_weapon.ammo_type else ""
+            ),
             f"Attacking: {self.player.attacking} (id={self.player.attack_id})",
+            f"Projectiles: {len(self.world.projectile_manager.projectiles)}",
             f"Enemies alive: {self.world.enemy_manager.alive_count()} "
             f"({self.world.enemy_manager.alive_by_type()})",
             f"Pickups: {self.pickup_manager.count() if self.pickup_manager else 0}",
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
             "Controls: WASD - Move, Shift - Sprint, Space - Attack, "
-            "1..8 - Weapon slot, Tab - Cycle weapon in slot",
+            "1..8 - Weapon slot, Tab - Cycle weapon in slot, R - Reload",
             "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10
@@ -599,6 +660,7 @@ class Game:
         # Сброс автосейв-состояния (см. _apply_loaded_save_data)
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
+        self._last_fired_attack_id = -1
         self.state = GameState.PLAYING
         print("   ✅ Игра загружена! (F9)")
 

@@ -84,6 +84,12 @@ class Weapon(ABC):
     duration_ms: int = 300  # сколько кадров показывается зона атаки
     cooldown_ms: int = 100  # минимальный интервал между атаками
 
+    # Баллистика (только для оружия с fires_projectile=True - см. RangedWeapon).
+    # У melee/AoE оружия остаются дефолты и не используются.
+    fires_projectile: bool = False
+    ammo_type: str = None  # None = не расходует патроны (melee, AoE)
+    magazine_size: int = 0
+
     @abstractmethod
     def get_attack_rects(self, player_rect: pygame.Rect,
                          facing_direction: str) -> List[pygame.Rect]:
@@ -130,38 +136,32 @@ class PolearmWeapon(Weapon):
 
 
 class RangedWeapon(Weapon):
-    """Стрелковое оружие: дальний бой, удар на 2-3 клетки впереди.
-
-    Пока механика та же, что и была у "Bow" - мгновенная линия из 3 клеток
-    ("трасса"). Реальная баллистика (пули с полётом, боезапас, перезарядка)
-    - отдельный последующий PR, эта категория лишь задел под него.
+    """Стрелковое оружие: реальная баллистика - на try_attack() спавнится
+    Projectile (см. src/entities/projectile.py), который сам летит и
+    проверяет столкновения по кадрам в ProjectileManager. get_attack_rects()
+    здесь не используется для урона (см. ниже) - урон наносит снаряд.
     """
     name = "Rifle"
     weapon_id = "rifle"
     category = "ranged"
     color = (255, 160, 60)       # оранжевая
-    reach = 0  # не используется напрямую - своя логика трассы
+    reach = 0
     rect_width = 32
     rect_height = 32
     damage = 1
     duration_ms = 200
     cooldown_ms = 250
 
-    trace_length = 3  # количество клеток в "трассе" стрелы
+    fires_projectile = True
+    ammo_type = "bullets"
+    magazine_size = 12
+    projectile_speed = 480       # px/сек
+    projectile_max_range = 420   # px (~13 клеток)
 
     def get_attack_rects(self, player_rect, facing_direction):
-        # Возвращаем N последовательных клеток вдоль направления взгляда,
-        # начиная с reach=0 (впритык) и наращивая на длину одной клетки.
-        rects = []
-        for i in range(self.trace_length):
-            r = _rect_in_direction(
-                player_rect, facing_direction,
-                reach=i * self.rect_width,
-                width=self.rect_width,
-                height=self.rect_height,
-            )
-            rects.append(r)
-        return rects
+        # Урон наносит Projectile, не мгновенный rect - иначе Player.draw()
+        # рисовал бы поверх летящей пули ещё и старую статичную рамку.
+        return []
 
 
 class AoeWeapon(Weapon):
