@@ -6,13 +6,15 @@ Single Responsibility: управлять атакой (старт, таймер
 """
 import pygame
 
+from src.core.config_loader import get_config
 from src.entities.weapons import (
     Weapon,
     WEAPON_CATALOG,
     create_weapon,
     starting_slot_assignment,
+    RangedWeapon,
 )
-from typing import List
+from typing import Dict, List
 
 # Максимум слотов оружия, открываемых прокачкой (см. PlayerStats.unlocked_weapon_slots).
 MAX_WEAPON_SLOTS = 8
@@ -36,6 +38,13 @@ class PlayerCombat:
             create_weapon(wid) for wid in starting_slot_assignment()
         ]
         self.current_weapon_index = 0
+
+        # Патроны по ammo_type. Только "bullets" (Rifle) заведены сейчас -
+        # у melee/AoE weapon.ammo_type == None, они эту систему не трогают.
+        self.magazine: Dict[str, int] = {"bullets": RangedWeapon.magazine_size}
+        self.reserve: Dict[str, int] = {
+            "bullets": get_config('AMMO_RIFLE_STARTING_RESERVE', 36)
+        }
 
     @property
     def current_weapon(self) -> Weapon:
@@ -77,14 +86,43 @@ class PlayerCombat:
         return True
 
     def try_attack(self) -> None:
-        """Попытка атаки с учётом cooldown текущего оружия."""
+        """Попытка атаки с учётом cooldown текущего оружия и патронов
+        (если у оружия задан ammo_type - пустой магазин блокирует атаку,
+        "щелчок по пустому", без списания cooldown)."""
         current_time = pygame.time.get_ticks()
         weapon = self.current_weapon
-        if not self.attacking and current_time - self.last_attack_time > weapon.cooldown_ms:
-            self.attacking = True
-            self.attack_timer = current_time
-            self.last_attack_time = current_time
-            self.attack_id += 1
+        if self.attacking or current_time - self.last_attack_time <= weapon.cooldown_ms:
+            return
+        if weapon.ammo_type and self.magazine.get(weapon.ammo_type, 0) <= 0:
+            return
+        if weapon.ammo_type:
+            self.magazine[weapon.ammo_type] -= 1
+        self.attacking = True
+        self.attack_timer = current_time
+        self.last_attack_time = current_time
+        self.attack_id += 1
+
+    def reload(self) -> bool:
+        """Перезарядить магазин текущего оружия из резерва. Блокируется во
+        время атаки. Возвращает True если что-то реально перенесено."""
+        weapon = self.current_weapon
+        if not weapon.ammo_type or self.attacking:
+            return False
+        ammo_type = weapon.ammo_type
+        need = weapon.magazine_size - self.magazine.get(ammo_type, 0)
+        if need <= 0:
+            return False
+        available = self.reserve.get(ammo_type, 0)
+        take = min(need, available)
+        if take <= 0:
+            return False
+        self.magazine[ammo_type] = self.magazine.get(ammo_type, 0) + take
+        self.reserve[ammo_type] = available - take
+        return True
+
+    def add_ammo(self, ammo_type: str, amount: int, cap: int) -> None:
+        """Добавить патроны в резерв (с учётом капа). Вызывается из AmmoPickup."""
+        self.reserve[ammo_type] = min(cap, self.reserve.get(ammo_type, 0) + amount)
 
     def update_attack(self) -> None:
         """Обновить таймер атаки — вызывать каждый кадр."""

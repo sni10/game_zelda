@@ -177,6 +177,39 @@ class Player:
     def unlock_slot(self) -> bool:
         return self._combat.unlock_slot()
 
+    # --- Патроны (делегирует PlayerCombat) ----------------------------------
+
+    @property
+    def magazine(self):
+        """dict ammo_type -> кол-во в магазине (тот же объект, не копия -
+        нужно save_system'у чтобы мутировать через .clear()/.update())."""
+        return self._combat.magazine
+
+    @property
+    def reserve(self):
+        """dict ammo_type -> кол-во в резерве."""
+        return self._combat.reserve
+
+    def reload(self) -> bool:
+        return self._combat.reload()
+
+    def add_ammo(self, ammo_type: str, amount: int, cap: int) -> None:
+        self._combat.add_ammo(ammo_type, amount, cap)
+
+    def magazine_count(self, ammo_type: str = None) -> int:
+        if ammo_type is None:
+            ammo_type = self.current_weapon.ammo_type
+        if not ammo_type:
+            return 0
+        return self._combat.magazine.get(ammo_type, 0)
+
+    def reserve_count(self, ammo_type: str = None) -> int:
+        if ammo_type is None:
+            ammo_type = self.current_weapon.ammo_type
+        if not ammo_type:
+            return 0
+        return self._combat.reserve.get(ammo_type, 0)
+
     def _handle_level_up(self, new_level: int) -> None:
         """Колбэк из PlayerStats: открыть слоты оружия, положенные по уровню."""
         target = unlocked_weapon_slots(new_level)

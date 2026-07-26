@@ -128,3 +128,39 @@ class XPOrbPickup(Pickup):
         pygame.draw.circle(screen, (80, 180, 255), (sx, sy), self.SIZE // 2)
         pygame.draw.circle(screen, (40, 120, 200), (sx, sy), self.SIZE // 2, 1)
 
+
+class AmmoPickup(Pickup):
+    """Патроны в резерв (см. PlayerCombat.add_ammo).
+
+    ammo_type - какой тип патронов (сейчас только "bullets" для Rifle).
+    amount - количество; влияет и на визуал (3 условных "размера" одного и
+    того же пикапа, без буквенной вложенности ящик->обойма->патрон)."""
+
+    def __init__(self, x: float, y: float, ammo_type: str = "bullets", amount: int = 10):
+        super().__init__(x, y)
+        self.ammo_type = ammo_type
+        self.amount = amount
+
+    def apply(self, player) -> None:
+        cap = get_config('AMMO_RIFLE_RESERVE_CAP', 90)
+        player.add_ammo(self.ammo_type, self.amount, cap)
+
+    def draw(self, screen, camera_x, camera_y):
+        sx = int(self.x - camera_x) + self.SIZE // 2
+        sy = int(self.y - camera_y) + self.SIZE // 2
+        if self.amount > 20:
+            # Ящик - жёлто-коричневый квадрат
+            size = self.SIZE
+            rect = pygame.Rect(sx - size // 2, sy - size // 2, size, size)
+            pygame.draw.rect(screen, (150, 110, 40), rect)
+            pygame.draw.rect(screen, (90, 60, 20), rect, 1)
+        elif self.amount > 8:
+            # Обойма - серый прямоугольник
+            w, h = self.SIZE, self.SIZE // 2
+            rect = pygame.Rect(sx - w // 2, sy - h // 2, w, h)
+            pygame.draw.rect(screen, (120, 120, 130), rect)
+            pygame.draw.rect(screen, (60, 60, 70), rect, 1)
+        else:
+            # Патроны - мелкая латунная точка
+            pygame.draw.circle(screen, (200, 170, 60), (sx, sy), self.SIZE // 3)
+

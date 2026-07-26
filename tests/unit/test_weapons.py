@@ -5,7 +5,7 @@
 - Симметричность зон поражения по 8 направлениям (фикс старого бага,
   где down/right были впритык, а up/left имели зазор).
 - Параметризацию reach для разных типов оружия.
-- Множественные зоны (RangedWeapon - "трасса стрелы").
+- RangedWeapon (Rifle) - реальная баллистика через Projectile, не мгновенный rect.
 - Переключение оружий в Player.switch_weapon().
 """
 import os
@@ -113,21 +113,28 @@ class TestPolearmWeapon:
 
 
 class TestRangedWeapon:
-    """Лук: возвращает несколько Rect (трасса стрелы)."""
+    """Rifle: реальная баллистика (Projectile), не мгновенный rect."""
 
-    def test_multiple_rects(self, player_rect):
-        bow = RangedWeapon()
-        rects = bow.get_attack_rects(player_rect, 'right')
-        assert len(rects) == bow.trace_length == 3
+    def test_no_instant_attack_rects(self, player_rect):
+        """Урон наносит Projectile, get_attack_rects() пуст (иначе
+        Player.draw() рисовал бы поверх летящей пули старую рамку)."""
+        rifle = RangedWeapon()
+        assert rifle.get_attack_rects(player_rect, 'right') == []
 
-    def test_rects_are_consecutive(self, player_rect):
-        """Каждая следующая клетка трассы дальше предыдущей."""
-        rects = RangedWeapon().get_attack_rects(player_rect, 'right')
-        # Проверяем монотонное удаление от игрока по направлению
-        cx = player_rect.centerx
-        distances = [abs(r.centerx - cx) for r in rects]
-        assert distances == sorted(distances)
-        assert distances[0] < distances[-1]
+    def test_fires_projectile_flag(self):
+        assert RangedWeapon.fires_projectile is True
+        assert RangedWeapon.ammo_type == "bullets"
+        assert RangedWeapon.magazine_size > 0
+        assert RangedWeapon.projectile_speed > 0
+        assert RangedWeapon.projectile_max_range > 0
+
+    def test_melee_weapons_do_not_fire_projectiles(self):
+        assert MeleeWeapon.fires_projectile is False
+        assert PolearmWeapon.fires_projectile is False
+        assert AoeWeapon.fires_projectile is False
+        assert MeleeWeapon.ammo_type is None
+        assert PolearmWeapon.ammo_type is None
+        assert AoeWeapon.ammo_type is None
 
 
 class TestAoeWeapon:
@@ -257,4 +264,104 @@ class TestWeaponSlotUnlockOnLevelUp:
         expected = unlocked_weapon_slots(player.level)
         assert expected > 2  # хотя бы один уровень разлочки пройден
         assert len(player.weapons) == expected
+
+
+# --- Патроны (v0.4.0b) -------------------------------------------------------
+
+class TestAmmo:
+    """PlayerCombat: магазин/резерв, гейтинг try_attack, reload, add_ammo."""
+
+    @pytest.fixture
+    def player(self):
+        from src.entities.player import Player
+        p = Player(100, 100)
+        # На слот 0 (по умолчанию sword) сажаем rifle, чтобы тестировать
+        # атаку без переключения слотов.
+        p._combat.weapons[0] = create_weapon("rifle")
+        # try_attack() гейтится cooldown'ом от pygame.time.get_ticks() -
+        # без этого тест может флакать, если суммарное время с pygame.init()
+        # ещё меньше cooldown_ms оружия (быстрый прогон файла).
+        p._combat.last_attack_time = -1_000_000
+        return p
+
+    def test_starts_with_full_magazine(self, player):
+        assert player.magazine_count() == RangedWeapon.magazine_size
+        assert player.magazine_count() > 0
+
+    def test_starts_with_configured_reserve(self, player):
+        assert player.reserve_count() > 0
+
+    def test_try_attack_consumes_one_bullet(self, player):
+        start = player.magazine_count()
+        player.try_attack()
+        assert player.attacking is True
+        assert player.magazine_count() == start - 1
+
+    def test_try_attack_blocked_on_empty_magazine(self, player):
+        player._combat.magazine["bullets"] = 0
+        attack_id_before = player.attack_id
+        player.try_attack()
+        assert player.attacking is False
+        assert player.attack_id == attack_id_before  # атака не взведена вовсе
+
+    def test_attack_id_stable_across_frames_while_attacking(self, player):
+        """Регресс на 'один снаряд на выстрел, не один на кадр': пока
+        attacking=True, повторные try_attack() (как при зажатом Space
+        несколько кадров) НЕ должны продвигать attack_id дальше - именно
+        на этой стабильности держится edge-detection в game.py."""
+        player.try_attack()
+        attack_id_after_first = player.attack_id
+        magazine_after_first = player.magazine_count()
+        for _ in range(10):
+            player.try_attack()
+        assert player.attack_id == attack_id_after_first
+        assert player.magazine_count() == magazine_after_first  # патрон не тратится повторно
+
+    def test_melee_weapon_unaffected_by_empty_magazine(self, player):
+        # Слот 1 - meele (spear по умолчанию из starting_slot_assignment)
+        player.switch_weapon(1)
+        player._combat.magazine["bullets"] = 0  # пустой магазин у rifle - неважно
+        player.try_attack()
+        assert player.attacking is True  # меч не расходует патроны
+
+    def test_reload_moves_reserve_to_magazine(self, player):
+        player._combat.magazine["bullets"] = 0
+        reserve_before = player.reserve_count()
+        ok = player.reload()
+        assert ok is True
+        assert player.magazine_count() == min(RangedWeapon.magazine_size, reserve_before)
+        assert player.reserve_count() == reserve_before - player.magazine_count()
+
+    def test_reload_caps_at_magazine_size(self, player):
+        player._combat.reserve["bullets"] = 1000
+        player.reload()
+        assert player.magazine_count() == RangedWeapon.magazine_size
+
+    def test_reload_noop_when_magazine_full(self, player):
+        reserve_before = player.reserve_count()
+        ok = player.reload()  # магазин уже полон при старте
+        assert ok is False
+        assert player.reserve_count() == reserve_before
+
+    def test_reload_noop_when_reserve_empty(self, player):
+        player._combat.magazine["bullets"] = 0
+        player._combat.reserve["bullets"] = 0
+        ok = player.reload()
+        assert ok is False
+        assert player.magazine_count() == 0
+
+    def test_reload_blocked_during_attack(self, player):
+        player._combat.magazine["bullets"] = 0
+        player.attacking = True
+        ok = player.reload()
+        assert ok is False
+
+    def test_add_ammo_caps_reserve(self, player):
+        player.add_ammo("bullets", 1000, cap=90)
+        assert player.reserve_count() == 90
+
+    def test_melee_weapon_has_no_ammo_readout(self, player):
+        player.switch_weapon(1)  # spear
+        assert player.magazine_count() == 0
+        assert player.reserve_count() == 0
 

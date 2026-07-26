@@ -4,7 +4,9 @@ PickupManager — спавн, обновление и рендер всех пи
 from typing import List
 import pygame
 
-from src.entities.pickup import Pickup, HeartPickup, CoinPickup, XPOrbPickup
+from src.entities.pickup import (
+    Pickup, HeartPickup, CoinPickup, XPOrbPickup, AmmoPickup,
+)
 
 
 # Регистр (type_id -> класс) для сериализации/десериализации.
@@ -13,6 +15,7 @@ _PICKUP_TYPES = {
     "heart": HeartPickup,
     "coin": CoinPickup,
     "xp_orb": XPOrbPickup,
+    "ammo": AmmoPickup,
 }
 _PICKUP_TYPE_IDS = {cls: tid for tid, cls in _PICKUP_TYPES.items()}
 
@@ -56,6 +59,8 @@ class PickupManager:
             }
             if hasattr(p, "amount"):
                 entry["amount"] = int(p.amount)
+            if hasattr(p, "ammo_type"):
+                entry["ammo_type"] = p.ammo_type
             out.append(entry)
         return out
 
@@ -74,5 +79,7 @@ class PickupManager:
                 p.lifetime = float(item["lifetime"])
             if "amount" in item and hasattr(p, "amount"):
                 p.amount = int(item["amount"])
+            if "ammo_type" in item and hasattr(p, "ammo_type"):
+                p.ammo_type = item["ammo_type"]
             self.pickups.append(p)
 
