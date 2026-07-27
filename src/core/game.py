@@ -17,6 +17,7 @@ from src.ui.menu import MainMenu
 from src.ui.game_over import GameOverScreen
 from src.ui.hud import HUD
 from src.ui.save_load_menu import SaveLoadMenu
+from src.ui.inventory_screen import InventoryScreen
 from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
@@ -86,6 +87,11 @@ class Game:
         # нажатие (attacking держится duration_ms, т.е. несколько кадров).
         self._last_fired_attack_id = -1
 
+        # Экран инвентаря (v0.4.x) — лениво создаётся, как save_load_menu.
+        # Открывается только из PLAYING, поэтому отдельной "return state"
+        # переменной не нужно - закрытие всегда ведёт обратно в PLAYING.
+        self.inventory_screen: InventoryScreen = None
+
     # --- Логирование -------------------------------------------------------
 
     def log(self, message, level="INFO"):
@@ -137,6 +143,7 @@ class Game:
 
         print("Игра запущена. WASD/стрелки - движение, Space - атака, "
               "1..8 - слот оружия, Tab - сменить оружие в слоте, R - перезарядка, "
+              "I - инвентарь, "
               "F1 - debug, F5 - quicksave, F6 - save menu, "
               "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
@@ -147,6 +154,13 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+                continue
+
+            # Инвентарь - единственное место, где обрабатывается мышь (drag-
+            # and-drop слотов оружия). Остальные состояния - строго клавиатура,
+            # без изменений в их поведении.
+            if self.state == GameState.INVENTORY:
+                self._handle_inventory_event(event)
                 continue
 
             if event.type != pygame.KEYDOWN:
@@ -220,6 +234,35 @@ class Game:
                 self.log(
                     f"🔃 Перезарядка {w.name}: "
                     f"{self.player.magazine_count()}/{self.player.reserve_count()}",
+                    "IMPORTANT",
+                )
+        elif event.key == pygame.K_i:
+            self._open_inventory()
+
+    def _open_inventory(self):
+        """Открыть экран инвентаря (I). Пауза приходит бесплатно - update()
+        уже не тикает вне PLAYING."""
+        if not self.player:
+            return
+        if self.inventory_screen is None:
+            self.inventory_screen = InventoryScreen()
+        self.state = GameState.INVENTORY
+
+    def _handle_inventory_event(self, event):
+        if self.inventory_screen is None or not self.player:
+            self.state = GameState.PLAYING
+            return
+        action = self.inventory_screen.handle_input(event, self.player)
+        if action is None:
+            return
+        atype = action.get("type")
+        if atype == "close":
+            self.state = GameState.PLAYING
+        elif atype == "move_weapon":
+            if self.player.move_weapon(action["from_index"], action["to_index"]):
+                self.log(
+                    f"🎒 Слоты {action['from_index'] + 1} и "
+                    f"{action['to_index'] + 1} поменяны местами",
                     "IMPORTANT",
                 )
 
@@ -506,8 +549,8 @@ class Game:
             else:
                 debug(
                     "WASD | Shift | Space | 1..8 | Tab - Cycle | R - Reload | "
-                    "F1 - Debug | F5 - Quicksave | F6 - Save menu | "
-                    "F9 - Quickload | ESC - Menu",
+                    "I - Inventory | F1 - Debug | F5 - Quicksave | "
+                    "F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
 
@@ -517,6 +560,9 @@ class Game:
         elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU) \
                 and self.save_load_menu is not None:
             self.save_load_menu.draw(self.screen)
+
+        elif self.state == GameState.INVENTORY and self.inventory_screen is not None:
+            self.inventory_screen.draw(self.screen, self.player)
 
         pygame.display.flip()
 
@@ -542,7 +588,7 @@ class Game:
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
             "Controls: WASD - Move, Shift - Sprint, Space - Attack, "
-            "1..8 - Weapon slot, Tab - Cycle weapon in slot, R - Reload",
+            "1..8 - Weapon slot, Tab - Cycle weapon in slot, R - Reload, I - Inventory",
             "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10

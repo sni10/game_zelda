@@ -20,7 +20,7 @@ class TestGameState(unittest.TestCase):
     def test_game_state_enum_members(self):
         """Тест наличия всех членов перечисления"""
         expected_states = {"MENU", "PLAYING", "GAME_OVER",
-                           "LOAD_MENU", "SAVE_MENU"}
+                           "LOAD_MENU", "SAVE_MENU", "INVENTORY"}
         actual_states = {state.name for state in GameState}
         self.assertEqual(expected_states, actual_states)
 

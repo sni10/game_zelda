@@ -174,6 +174,9 @@ class Player:
     def cycle_slot_weapon(self, index: int) -> bool:
         return self._combat.cycle_slot_weapon(index)
 
+    def move_weapon(self, from_index: int, to_index: int) -> bool:
+        return self._combat.move_weapon(from_index, to_index)
+
     def unlock_slot(self) -> bool:
         return self._combat.unlock_slot()
 

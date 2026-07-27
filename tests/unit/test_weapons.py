@@ -250,6 +250,51 @@ class TestFlexibleWeaponSlots:
         assert player.switch_weapon(2) is False
 
 
+class TestMoveWeapon:
+    """PlayerCombat.move_weapon - своп двух слотов (drag-and-drop в InventoryScreen)."""
+
+    @pytest.fixture
+    def player(self):
+        from src.entities.player import Player
+        p = Player(100, 100)
+        p.unlock_slot()
+        p.unlock_slot()
+        return p  # 4 слота: sword, spear, sword, sword
+
+    def test_swaps_two_slots(self, player):
+        before = [w.weapon_id for w in player.weapons]
+        assert player.move_weapon(0, 1) is True
+        after = [w.weapon_id for w in player.weapons]
+        assert after[0] == before[1]
+        assert after[1] == before[0]
+        # Остальные слоты не тронуты
+        assert after[2:] == before[2:]
+
+    def test_same_index_is_noop(self, player):
+        before = [w.weapon_id for w in player.weapons]
+        assert player.move_weapon(1, 1) is False
+        assert [w.weapon_id for w in player.weapons] == before
+
+    def test_out_of_range_index_rejected(self, player):
+        assert player.move_weapon(0, 99) is False
+        assert player.move_weapon(99, 0) is False
+
+    def test_blocked_during_attack(self, player):
+        player.attacking = True
+        before = [w.weapon_id for w in player.weapons]
+        assert player.move_weapon(0, 1) is False
+        assert [w.weapon_id for w in player.weapons] == before
+
+    def test_current_weapon_index_not_adjusted_by_swap(self, player):
+        # current_weapon_index указывает на позицию, не на объект - после
+        # свопа активным становится то, что физически лежит в этом слоте.
+        player.current_weapon_index = 0
+        assert player.current_weapon.weapon_id == "sword"
+        player.move_weapon(0, 1)
+        assert player.current_weapon_index == 0
+        assert player.current_weapon.weapon_id == "spear"
+
+
 class TestWeaponSlotUnlockOnLevelUp:
     """Разлочка слотов должна следовать config.ini weapon_slot_unlock_levels."""
 
