@@ -77,7 +77,14 @@ def test_player_roundtrip_full(tmp_save_system):
     p.stats.coins = 99
     p.stats.damage_bonus = 2
     p.stats.iframe_timer = 0.42
-    p.current_weapon_index = 2  # bow
+    # Открываем 3-й слот и крутим его до "rifle" (sword -> spear -> rifle)
+    p.unlock_slot()
+    p.cycle_slot_weapon(2)
+    p.cycle_slot_weapon(2)
+    p.current_weapon_index = 2  # rifle
+    # Патроны (v0.4.0b): нестандартные значения, чтобы отличить от дефолта
+    p.magazine["bullets"] = 4
+    p.reserve["bullets"] = 17
 
     assert tmp_save_system.save_game(p, world) is True
     data = tmp_save_system.load_game()
@@ -96,7 +103,29 @@ def test_player_roundtrip_full(tmp_save_system):
     assert p2.stats.coins == 99
     assert p2.stats.damage_bonus == 2
     assert p2.stats.iframe_timer == pytest.approx(0.42)
+    assert [w.weapon_id for w in p2.weapons] == ["sword", "spear", "rifle"]
     assert p2.current_weapon_index == 2
+    assert p2.magazine["bullets"] == 4
+    assert p2.reserve["bullets"] == 17
+
+
+def test_player_ammo_backward_compat_without_ammo_key(tmp_save_system):
+    """Сейв версии < 1.3 (без ключа 'ammo') не должен крашить загрузку -
+    оставляем дефолтный стартовый боезапас из PlayerCombat.__init__."""
+    world = _MockWorld()
+    p = Player(0.0, 0.0)
+
+    assert tmp_save_system.save_game(p, world) is True
+    data = tmp_save_system.load_game()
+    del data["player"]["ammo"]  # эмулируем старый сейв без патронов
+
+    p2 = Player(0, 0)
+    default_magazine = dict(p2.magazine)
+    default_reserve = dict(p2.reserve)
+    tmp_save_system.apply_save_data_to_player(p2, data)
+
+    assert p2.magazine == default_magazine
+    assert p2.reserve == default_reserve
 
 
 # ---------------------------------------------------------------------------

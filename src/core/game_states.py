@@ -8,3 +8,4 @@ class GameState(Enum):
     GAME_OVER = "game_over"
     LOAD_MENU = "load_menu"
     SAVE_MENU = "save_menu"
+    INVENTORY = "inventory"

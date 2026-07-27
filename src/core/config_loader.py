@@ -123,7 +123,8 @@ class ConfigLoader:
                                           ('combat', 'COMBAT'),
                                           ('pickups', 'PICKUPS'),
                                           ('drops', 'DROPS'),
-                                          ('progression', 'PROGRESSION')]:
+                                          ('progression', 'PROGRESSION'),
+                                          ('ammo', 'AMMO')]:
                 if not parser.has_section(section_name):
                     continue
                 for key, value in parser.items(section_name):

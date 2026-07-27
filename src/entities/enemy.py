@@ -61,8 +61,6 @@ class Enemy:
         # Тик attack cooldown
         if self.attack_cooldown_timer > 0:
             self.attack_cooldown_timer = max(0.0, self.attack_cooldown_timer - dt)
-        # Запоминаем позицию до движения
-        old_x, old_y = self.x, self.y
         # Knockback приоритетнее AI
         if self.knockback_timer > 0:
             self.knockback_timer -= dt
@@ -84,15 +82,33 @@ class Enemy:
                 self.knockback_vy = 0.0
             return
         self.ai.update(self, dt, world, player)
-        # После AI: не допускаем пересечения с хитбоксом игрока
+        # После AI: не допускаем пересечения с хитбоксом игрока. Мягкое
+        # разрешение (push-out по меньшей оси проникновения), а не полный
+        # откат на позицию кадром раньше - откат каждый кадр гонял врага
+        # "туда-обратно" при погоне (ChaseBehavior целится в упор в игрока
+        # заново, не зная о прошлом откате) - выглядело как дрожание.
         if player is not None and self.rect.colliderect(player.rect):
-            self.x = old_x
-            self.y = old_y
-            self.rect.x = int(old_x)
-            self.rect.y = int(old_y)
+            self._resolve_player_overlap(player.rect)
             self.touching_player = True
         else:
             self.touching_player = False
+
+    def _resolve_player_overlap(self, player_rect: pygame.Rect) -> None:
+        """Вытолкнуть врага из хитбокса игрока по меньшей из двух осей
+        проникновения (стандартный AABB push-out), сохраняя продвижение по
+        другой оси - вместо полного отката позиции."""
+        ex, ey = self.rect.centerx, self.rect.centery
+        px, py = player_rect.centerx, player_rect.centery
+        overlap_x = (self.rect.width + player_rect.width) / 2 - abs(ex - px)
+        overlap_y = (self.rect.height + player_rect.height) / 2 - abs(ey - py)
+        if overlap_x <= 0 or overlap_y <= 0:
+            return
+        if overlap_x < overlap_y:
+            self.x += overlap_x if ex >= px else -overlap_x
+        else:
+            self.y += overlap_y if ey >= py else -overlap_y
+        self.rect.x = int(self.x)
+        self.rect.y = int(self.y)
     def draw(self, screen, camera_x, camera_y) -> None:
         if self.is_dead():
             return

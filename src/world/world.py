@@ -7,6 +7,7 @@ from src.world.terrain import TerrainType, TRANSLUCENT_OVERLAY_TYPES
 from src.world.map_loader import load_map_from_file
 from src.world.camera import Camera
 from src.systems.enemy_manager import EnemyManager
+from src.systems.projectile_manager import ProjectileManager
 
 
 class World:
@@ -39,6 +40,11 @@ class World:
         # Менеджер врагов. Враги хранятся внутри мира - удобно для save/load
         # и логически правильно (мир = всё что на нём).
         self.enemy_manager = EnemyManager(self)
+
+        # Менеджер летящих снарядов (реальная баллистика стрелкового оружия).
+        # Не сериализуется - время жизни пули - доли секунды, терять её при
+        # save/load незаметно и не влияет на баланс.
+        self.projectile_manager = ProjectileManager(self)
 
     # --- Камера (делегирует Camera) ----------------------------------------
 

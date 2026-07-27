@@ -16,6 +16,9 @@ import json
 import os
 from datetime import datetime
 
+from src.entities.weapons import WEAPON_CATALOG, create_weapon
+from src.entities.player_stats import unlocked_weapon_slots
+
 
 class SaveValidationError(ValueError):
     """Сохранение не прошло валидацию схемы."""
@@ -24,12 +27,14 @@ class SaveValidationError(ValueError):
 class SaveSystem:
     """Система сохранения и загрузки игрового прогресса."""
 
-    SAVE_VERSION = "1.1"
+    SAVE_VERSION = "1.3"
 
     # Версии, с которыми мы умеем работать на загрузке.
     # 1.0 — старый формат без enemies/pickups/game_stats/weapon_index.
-    # 1.1 — текущий полноценный формат.
-    SUPPORTED_VERSIONS = {"1.0", "1.1"}
+    # 1.1 — добавлены enemies/pickups/game_stats/current_weapon_index.
+    # 1.2 — добавлены гибкие слоты оружия (weapon_slots).
+    # 1.3 — добавлены патроны (ammo: magazine/reserve).
+    SUPPORTED_VERSIONS = {"1.0", "1.1", "1.2", "1.3"}
 
     # Обязательные верхнеуровневые ключи в save_data
     _REQUIRED_TOP_KEYS = ("version", "player")
@@ -221,6 +226,12 @@ class SaveSystem:
         if "game_stats" in data and data["game_stats"] is not None:
             if not isinstance(data["game_stats"], dict):
                 raise SaveValidationError("'game_stats' должно быть объектом")
+        weapon_slots = player.get("weapon_slots")
+        if weapon_slots is not None and not isinstance(weapon_slots, list):
+            raise SaveValidationError("player['weapon_slots'] должно быть списком")
+        ammo = player.get("ammo")
+        if ammo is not None and not isinstance(ammo, dict):
+            raise SaveValidationError("player['ammo'] должно быть объектом")
 
     # --- Сериализация ------------------------------------------------------
 
@@ -238,6 +249,11 @@ class SaveSystem:
             "damage_bonus": int(player.damage_bonus),
             "current_weapon_index": int(getattr(player, "current_weapon_index", 0)),
             "iframe_timer": float(getattr(player.stats, "iframe_timer", 0.0)),
+            "weapon_slots": [w.weapon_id for w in getattr(player, "weapons", [])],
+            "ammo": {
+                "magazine": dict(getattr(player, "magazine", {})),
+                "reserve": dict(getattr(player, "reserve", {})),
+            },
         }
 
     def _serialize_world(self, world):
@@ -270,6 +286,33 @@ class SaveSystem:
             stats.coins = int(player_data.get("coins", 0))
             stats.damage_bonus = int(player_data.get("damage_bonus", 0))
             stats.iframe_timer = float(player_data.get("iframe_timer", 0.0))
+
+            # Слоты оружия — восстанавливаем ДО индекса, иначе индекс может
+            # указывать за пределы дефолтного 2-слотового лоадаута.
+            weapon_slots = player_data.get("weapon_slots")
+            if weapon_slots:
+                player.weapons = [
+                    create_weapon(wid) for wid in weapon_slots
+                    if wid in WEAPON_CATALOG
+                ]
+            else:
+                # Старый сейв (версия < 1.2) без weapon_slots — довосстанавливаем
+                # слоты по уровню игрока, чтобы не откатывать разлоченные
+                # уровнями слоты обратно к стартовым двум.
+                target = unlocked_weapon_slots(stats.level)
+                while len(player.weapons) < target:
+                    if not player.unlock_slot():
+                        break
+
+            # Патроны — если в сейве нет ключа (версия < 1.3), оставляем
+            # дефолтный стартовый боезапас из PlayerCombat.__init__ как есть
+            # (в отличие от weapon_slots, тут нет зависимости от уровня).
+            ammo_data = player_data.get("ammo")
+            if ammo_data:
+                player.magazine.clear()
+                player.magazine.update(ammo_data.get("magazine", {}))
+                player.reserve.clear()
+                player.reserve.update(ammo_data.get("reserve", {}))
 
             # Активное оружие — выставляем напрямую, без switch_weapon
             # (тот блокирует переключение во время attacking и при том же

@@ -18,7 +18,7 @@ import pygame
 from src.core.config_loader import get_config
 from src.entities.enemy import Enemy
 from src.entities.enemy_factory import EnemyFactory
-from src.entities.pickup import HeartPickup, CoinPickup, XPOrbPickup
+from src.entities.pickup import HeartPickup, CoinPickup, XPOrbPickup, AmmoPickup
 
 
 class EnemyManager:
@@ -148,6 +148,35 @@ class EnemyManager:
                     spawned += 1
         return spawned
 
+    def _apply_separation(self) -> None:
+        """Лёгкое взаимное отталкивание живых врагов, чтобы не слипались в
+        кучу при погоне толпой - каждый враг целится независимо в игрока,
+        ничего не зная о соседях. O(n^2) по живым врагам - при типичных
+        ~12-20 врагах пренебрежимо дёшево. Столкновения со стенами при
+        отталкивании не проверяются (сознательно, минорный краевой случай)."""
+        alive = [e for e in self.enemies if not e.is_dead()]
+        for i in range(len(alive)):
+            for j in range(i + 1, len(alive)):
+                a, b = alive[i], alive[j]
+                if not a.rect.colliderect(b.rect):
+                    continue
+                dx = (a.x + a.rect.width / 2) - (b.x + b.rect.width / 2)
+                dy = (a.y + a.rect.height / 2) - (b.y + b.rect.height / 2)
+                dist = math.hypot(dx, dy) or 1.0
+                min_dist = ((a.rect.width + b.rect.width) / 4
+                            + (a.rect.height + b.rect.height) / 4)
+                overlap = min_dist - dist
+                if overlap <= 0:
+                    continue
+                push = overlap / 2
+                nx, ny = dx / dist, dy / dist
+                a.x += nx * push
+                a.y += ny * push
+                b.x -= nx * push
+                b.y -= ny * push
+                a.rect.x, a.rect.y = int(a.x), int(a.y)
+                b.rect.x, b.rect.y = int(b.x), int(b.y)
+
     # --- Обновление --------------------------------------------------------
 
     def update(self, dt: float, player_x: float = None, player_y: float = None,
@@ -161,6 +190,10 @@ class EnemyManager:
         """
         for enemy in self.enemies:
             enemy.update(dt, self.world, player)
+        # Сепарация - враги ничего не знают друг о друге в своём AI, без
+        # этого толпа при погоне накладывается друг на друга (визуально
+        # хаотично). Лёгкое взаимное отталкивание после хода AI.
+        self._apply_separation()
         # Drop loot с мёртвых ПЕРЕД удалением
         self._drop_loot_from_dead(player)
         # Чистим мёртвых
@@ -183,12 +216,16 @@ class EnemyManager:
     def apply_player_attack(self, attack_id: int,
                             attack_rects: List[pygame.Rect],
                             damage: int,
-                            player=None) -> Tuple[int, int]:
+                            player=None,
+                            is_melee: bool = False) -> Tuple[int, int]:
         """Нанести урон врагам, которых задевают зоны атаки.
 
         attack_id - уникальный идентификатор текущей атаки игрока,
                     нужен чтобы не наносить урон одной атакой каждый кадр.
                     Один враг получит урон от одной atак_id максимум один раз.
+        is_melee - категория оружия, которым нанесён урон (Weapon.category
+                    == "melee"). Пробрасывается в дроп-луты для бонуса
+                    ближнего боя (см. _drop_loot_from_dead).
 
         Возвращает (hits, kills).
         """
@@ -211,6 +248,8 @@ class EnemyManager:
                 if r.colliderect(enemy.rect):
                     enemy.take_damage(damage)
                     enemy.last_hit_attack_id = attack_id
+                    if is_melee:
+                        enemy._hit_by_melee = True
                     # Knockback от игрока
                     if player is not None:
                         dx = enemy.x - player.x
@@ -309,12 +348,23 @@ class EnemyManager:
         prefix = enemy.stats.name.lower()  # light / heavy / fast
         cx, cy = enemy.x, enemy.y
 
-        # XP — всегда (фиксированное количество)
-        xp_amount = get_config(f'DROPS_{prefix.upper()}_XP_AMOUNT', 0)
+        # Бонус ближнего боя: убийство мечом даёт больше XP/монет (только
+        # количество, не шанс дропа). См. config.ini [progression]
+        # melee_kill_bonus_multiplier.
+        bonus_mult = (
+            get_config('PROGRESSION_MELEE_KILL_BONUS_MULTIPLIER', 1.0)
+            if getattr(enemy, '_hit_by_melee', False) else 1.0
+        )
+
+        # XP — всегда (фиксированное количество, с бонусом ближнего боя).
+        # ceil (не round) - чтобы бонус всегда был виден хотя бы на 1 единицу,
+        # а не терялся округлением на маленьких значениях (1-2 ед.).
+        xp_amount = int(math.ceil(get_config(f'DROPS_{prefix.upper()}_XP_AMOUNT', 0) * bonus_mult))
         if xp_amount > 0:
             self.pickup_manager.spawn(
                 XPOrbPickup(cx + random.uniform(-8, 8),
-                            cy + random.uniform(-8, 8))
+                            cy + random.uniform(-8, 8),
+                            amount=xp_amount)
             )
 
         # Определяем что дропать: сердечки или монеты
@@ -337,12 +387,25 @@ class EnemyManager:
             if random.random() < coin_chance:
                 coin_min = get_config(f'DROPS_{prefix.upper()}_COIN_MIN', 1)
                 coin_max = get_config(f'DROPS_{prefix.upper()}_COIN_MAX', 1)
-                count = random.randint(coin_min, coin_max)
+                count = int(math.ceil(random.randint(coin_min, coin_max) * bonus_mult))
                 for _ in range(count):
                     self.pickup_manager.spawn(
                         CoinPickup(cx + random.uniform(-12, 12),
                                    cy + random.uniform(-12, 12))
                     )
+
+        # Патроны — независимый шанс (не завязан на heal/coin ветвление,
+        # как XP выше). Без бонуса ближнего боя - не в тему бонуса.
+        ammo_chance = get_config(f'DROPS_{prefix.upper()}_AMMO_CHANCE', 0.0)
+        if random.random() < ammo_chance:
+            ammo_min = get_config(f'DROPS_{prefix.upper()}_AMMO_MIN', 1)
+            ammo_max = get_config(f'DROPS_{prefix.upper()}_AMMO_MAX', 1)
+            amount = random.randint(ammo_min, ammo_max)
+            self.pickup_manager.spawn(
+                AmmoPickup(cx + random.uniform(-10, 10),
+                           cy + random.uniform(-10, 10),
+                           ammo_type="bullets", amount=amount)
+            )
 
     # --- Утилиты -----------------------------------------------------------
 
