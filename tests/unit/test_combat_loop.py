@@ -44,21 +44,26 @@ def _make_enemy(x=500, y=500, hp=3, damage=1, speed=80):
 class TestEnemyPlayerCollision:
 
     def test_enemy_does_not_overlap_player(self, world):
-        """Враг не может войти в хитбокс игрока."""
+        """Враг не может остаться внутри хитбокса игрока - мягкий push-out
+        выталкивает его по минимальной оси проникновения, а не откатывает
+        целиком на позицию кадром раньше (это давало дрожание при погоне -
+        ChaseBehavior каждый кадр целился заново, не зная об откате).
+
+        Враг стартует уже пересекаясь с игроком - IdleBehavior сам его не
+        двигает, так тест изолированно проверяет именно collision-response
+        (_resolve_player_overlap), а не AI."""
         player = MagicMock()
         player.x = 100.0
         player.y = 100.0
         player.rect = pygame.Rect(100, 100, 32, 32)
 
-        # Враг рядом, двигается к игроку
-        enemy = _make_enemy(x=140, y=100, speed=200)
+        enemy = _make_enemy(x=110, y=100, speed=200)
         old_x = enemy.x
-        # update: AI двигает к игроку, но коллизия с player.rect откатывает
         enemy.update(0.5, world, player)
-        # Враг НЕ должен залезть в игрока
+
         assert not enemy.rect.colliderect(player.rect)
-        # Позиция осталась прежней (откат)
-        assert enemy.x == old_x
+        # Push-out, не полный откат: враг реально сдвинулся с исходной позиции.
+        assert enemy.x != old_x
 
 
 class TestKnockbackOnEnemy:
@@ -342,4 +347,93 @@ class TestAmmoDrop:
         screen = pygame.Surface((200, 200))
         for amount in (3, 15, 40):
             AmmoPickup(50, 50, ammo_type="bullets", amount=amount).draw(screen, 0, 0)
+
+
+class TestResolvePlayerOverlap:
+    """Enemy._resolve_player_overlap - push-out по меньшей оси проникновения
+    вместо полного отката позиции (см. Enemy.update)."""
+
+    def test_pushes_along_horizontal_when_x_overlap_smaller(self):
+        # Игрок 32x32 в (100,100) -> [100,132]x[100,132].
+        # Враг 24x24 сильно пересекается по X (мало overlap_x), но полностью
+        # укладывается по Y (overlap_y большой) - должен вытолкнуться по X.
+        player_rect = pygame.Rect(100, 100, 32, 32)
+        enemy = _make_enemy(x=126, y=104, speed=100)  # почти вплотную справа
+        enemy.rect = pygame.Rect(126, 104, 24, 24)
+        old_y = enemy.y
+        enemy._resolve_player_overlap(player_rect)
+        assert not enemy.rect.colliderect(player_rect)
+        assert enemy.y == old_y  # Y не тронут - вытолкнуло по X
+
+    def test_pushes_along_vertical_when_y_overlap_smaller(self):
+        player_rect = pygame.Rect(100, 100, 32, 32)
+        enemy = _make_enemy(x=104, y=126, speed=100)  # почти вплотную снизу
+        enemy.rect = pygame.Rect(104, 126, 24, 24)
+        old_x = enemy.x
+        enemy._resolve_player_overlap(player_rect)
+        assert not enemy.rect.colliderect(player_rect)
+        assert enemy.x == old_x  # X не тронут - вытолкнуло по Y
+
+    def test_pushes_away_from_player_center(self):
+        """Толкает наружу, не внутрь игрока."""
+        player_rect = pygame.Rect(100, 100, 32, 32)
+        enemy = _make_enemy(x=126, y=104, speed=100)
+        enemy.rect = pygame.Rect(126, 104, 24, 24)
+        enemy._resolve_player_overlap(player_rect)
+        assert enemy.x >= 126  # уехал вправо (от игрока), не влево
+
+    def test_noop_when_not_overlapping(self):
+        player_rect = pygame.Rect(100, 100, 32, 32)
+        enemy = _make_enemy(x=500, y=500, speed=100)
+        old_x, old_y = enemy.x, enemy.y
+        enemy._resolve_player_overlap(player_rect)
+        assert (enemy.x, enemy.y) == (old_x, old_y)
+
+
+class TestEnemySeparation:
+    """EnemyManager._apply_separation - взаимное отталкивание живых врагов."""
+
+    def test_overlapping_enemies_pushed_apart(self, enemy_manager):
+        a = _make_enemy(x=100, y=100)
+        b = _make_enemy(x=105, y=100)  # почти полностью пересекаются (24px)
+        enemy_manager.enemies = [a, b]
+        enemy_manager._apply_separation()
+        assert not a.rect.colliderect(b.rect)
+
+    def test_overlapping_enemies_move_apart_symmetrically(self, enemy_manager):
+        a = _make_enemy(x=100, y=100)
+        b = _make_enemy(x=110, y=100)
+        a_before, b_before = a.x, b.x
+        enemy_manager.enemies = [a, b]
+        enemy_manager._apply_separation()
+        # a уходит влево, b уходит вправо (расходятся)
+        assert a.x < a_before
+        assert b.x > b_before
+
+    def test_non_overlapping_enemies_untouched(self, enemy_manager):
+        a = _make_enemy(x=100, y=100)
+        b = _make_enemy(x=500, y=500)
+        a_pos, b_pos = (a.x, a.y), (b.x, b.y)
+        enemy_manager.enemies = [a, b]
+        enemy_manager._apply_separation()
+        assert (a.x, a.y) == a_pos
+        assert (b.x, b.y) == b_pos
+
+    def test_dead_enemies_excluded(self, enemy_manager):
+        a = _make_enemy(x=100, y=100, hp=1)
+        b = _make_enemy(x=105, y=100, hp=1)
+        a.take_damage(1)
+        assert a.is_dead()
+        b_pos = (b.x, b.y)
+        enemy_manager.enemies = [a, b]
+        enemy_manager._apply_separation()
+        # Мёртвый враг не участвует - живой (b) никуда не сдвинулся,
+        # т.к. единственный живой в списке.
+        assert (b.x, b.y) == b_pos
+
+    def test_no_crash_with_single_or_no_enemies(self, enemy_manager):
+        enemy_manager.enemies = []
+        enemy_manager._apply_separation()
+        enemy_manager.enemies = [_make_enemy()]
+        enemy_manager._apply_separation()
 

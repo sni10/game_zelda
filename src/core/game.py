@@ -9,6 +9,7 @@ Game - основной класс игрового цикла.
 import pygame
 import sys
 import os
+import math
 
 from src.core.config_loader import load_config, get_config, get_color
 from src.core.game_states import GameState
@@ -22,7 +23,6 @@ from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
 from src.entities.projectile import Projectile
-from src.entities.weapons import DIRECTION_VECTORS
 from src.world.world import World
 from src.systems.save_system import SaveSystem
 from src.systems.pickup_manager import PickupManager
@@ -141,7 +141,8 @@ class Game:
         )
         self.hud = HUD()
 
-        print("Игра запущена. WASD/стрелки - движение, Space - атака, "
+        print("Игра запущена. WASD/стрелки - движение, мышь - прицел (360°), "
+              "Space/ЛКМ - атака, "
               "1..8 - слот оружия, Tab - сменить оружие в слоте, R - перезарядка, "
               "I - инвентарь, "
               "F1 - debug, F5 - quicksave, F6 - save menu, "
@@ -156,11 +157,19 @@ class Game:
                 self.running = False
                 continue
 
-            # Инвентарь - единственное место, где обрабатывается мышь (drag-
-            # and-drop слотов оружия). Остальные состояния - строго клавиатура,
-            # без изменений в их поведении.
+            # Инвентарь - drag-and-drop слотов оружия мышью.
             if self.state == GameState.INVENTORY:
                 self._handle_inventory_event(event)
+                continue
+
+            # ЛКМ дополнительно к Space атакует в текущем направлении прицела
+            # (прицел следует за мышью - см. Player.update_aim). Пробел
+            # по-прежнему работает как раньше, это не замена, а альтернатива.
+            if (self.state == GameState.PLAYING
+                    and event.type == pygame.MOUSEBUTTONDOWN
+                    and event.button == 1):
+                if self.player:
+                    self.player.try_attack()
                 continue
 
             if event.type != pygame.KEYDOWN:
@@ -434,6 +443,8 @@ class Game:
 
         keys = pygame.key.get_pressed()
         self.player.handle_input(keys)
+        # Прицел независим от WASD - следует за мышью каждый кадр (twin-stick).
+        self.player.update_aim(self.world.camera_x, self.world.camera_y)
         self.player.update(dt, self.world, self.game_stats)
 
         # Враги патрулируют свои зоны + авто-респавн при удалении игрока
@@ -500,8 +511,8 @@ class Game:
         )
 
     def _spawn_projectile(self, weapon) -> None:
-        """Создать и заспавнить снаряд в направлении взгляда игрока."""
-        dx, dy = DIRECTION_VECTORS[self.player.facing_direction]
+        """Создать и заспавнить снаряд в направлении прицела игрока (360°)."""
+        dx, dy = self.player.aim_dx, self.player.aim_dy
         cx = self.player.x + self.player.width / 2
         cy = self.player.y + self.player.height / 2
         projectile = Projectile(
@@ -548,8 +559,8 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD | Shift | Space | 1..8 | Tab - Cycle | R - Reload | "
-                    "I - Inventory | F1 - Debug | F5 - Quicksave | "
+                    "WASD | Mouse - Aim | Space/LMB - Attack | 1..8 | Tab - Cycle | "
+                    "R - Reload | I - Inventory | F1 - Debug | F5 - Quicksave | "
                     "F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
@@ -573,7 +584,8 @@ class Game:
             f" | Lv.{self.player.level}"
             f" | XP: {self.player.xp}/{self.player.stats.xp_to_next_level}"
             f" | Coins: {self.player.coins}",
-            f"Direction: {self.player.facing_direction}",
+            f"Direction: {self.player.facing_direction} "
+            f"({math.degrees(math.atan2(self.player.aim_dy, self.player.aim_dx)):.0f}°, мышь)",
             f"Sprint: {self.player.is_sprinting} (x{self.player.sprint_multiplier})",
             f"Weapon: {self.player.current_weapon.name} (dmg={self.player.current_weapon.damage}+{self.player.damage_bonus})"
             + (
@@ -587,8 +599,9 @@ class Game:
             f"Pickups: {self.pickup_manager.count() if self.pickup_manager else 0}",
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
-            "Controls: WASD - Move, Shift - Sprint, Space - Attack, "
-            "1..8 - Weapon slot, Tab - Cycle weapon in slot, R - Reload, I - Inventory",
+            "Controls: WASD - Move, Mouse - Aim (360), Shift - Sprint, "
+            "Space/LMB - Attack, 1..8 - Weapon slot, Tab - Cycle, "
+            "R - Reload, I - Inventory",
             "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10

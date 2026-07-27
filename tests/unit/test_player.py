@@ -1,6 +1,7 @@
 """
 Tests for the Player class
 """
+import math
 import pytest
 import pygame
 import os
@@ -62,10 +63,11 @@ class TestPlayer:
         }
         
         self.player.handle_input(keys)
-        
+
         assert self.player.direction_x == 1
         assert self.player.direction_y == 0
-        assert self.player.facing_direction == 'right'
+        # facing_direction больше не выводится из WASD - см. update_aim()
+        # (мышь, "как турель") - движение и прицел независимы.
         
     def test_player_diagonal_movement(self):
         """Test player diagonal movement normalization"""
@@ -180,12 +182,13 @@ class TestPlayer:
         из активного оружия. Стартовое оружие - меч 32x32 (одна клетка).
         Главное - симметрия: для всех направлений возвращается валидный rect.
         """
+        from src.entities.weapons import DIRECTION_VECTORS
         directions = ['up', 'down', 'left', 'right', 'up_left', 'up_right', 'down_left', 'down_right']
         expected_w = self.player.current_weapon.rect_width
         expected_h = self.player.current_weapon.rect_height
 
         for direction in directions:
-            self.player.facing_direction = direction
+            self.player.aim_dx, self.player.aim_dy = DIRECTION_VECTORS[direction]
             self.player.attacking = True
 
             attack_rect = self.player.get_attack_rect()
@@ -303,60 +306,72 @@ class TestPlayer:
         expected_x = initial_x + 60
         assert abs(self.player.x - expected_x) < 1  # Allow small floating point differences
 
-    def test_player_8_directional_facing(self):
-        """Test player facing direction updates correctly for all 8 directions"""
-        # Test cardinal directions
-        keys_facing_map = [
-            ({'left': True}, 'left'),
-            ({'right': True}, 'right'),
-            ({'up': True}, 'up'),
-            ({'down': True}, 'down'),
-            ({'left': True, 'up': True}, 'up_left'),
-            ({'right': True, 'up': True}, 'up_right'),
-            ({'left': True, 'down': True}, 'down_left'),
-            ({'right': True, 'down': True}, 'down_right'),
-        ]
-        
-        for key_state, expected_facing in keys_facing_map:
-            # Create mock keys
-            mock_keys = MagicMock()
-            mock_keys.__getitem__ = lambda self, key: key_state.get(key.name.lower(), False)
-            
-            # Simulate key input
-            if key_state.get('left'):
-                self.player.direction_x = -1
-            elif key_state.get('right'):
-                self.player.direction_x = 1
-            else:
-                self.player.direction_x = 0
-                
-            if key_state.get('up'):
-                self.player.direction_y = -1
-            elif key_state.get('down'):
-                self.player.direction_y = 1
-            else:
-                self.player.direction_y = 0
-            
-            # Update facing direction based on movement
-            if self.player.direction_x != 0 or self.player.direction_y != 0:
-                if self.player.direction_x == -1 and self.player.direction_y == -1:
-                    self.player.facing_direction = 'up_left'
-                elif self.player.direction_x == 1 and self.player.direction_y == -1:
-                    self.player.facing_direction = 'up_right'
-                elif self.player.direction_x == -1 and self.player.direction_y == 1:
-                    self.player.facing_direction = 'down_left'
-                elif self.player.direction_x == 1 and self.player.direction_y == 1:
-                    self.player.facing_direction = 'down_right'
-                elif self.player.direction_x == -1:
-                    self.player.facing_direction = 'left'
-                elif self.player.direction_x == 1:
-                    self.player.facing_direction = 'right'
-                elif self.player.direction_y == -1:
-                    self.player.facing_direction = 'up'
-                elif self.player.direction_y == 1:
-                    self.player.facing_direction = 'down'
-            
-            assert self.player.facing_direction == expected_facing
+    # --- Прицел мышью (360°, "как турель") ---------------------------------
+
+    def _aim_at_screen_offset(self, dx_screen, dy_screen, camera_x=0, camera_y=0):
+        """Поставить курсор на dx_screen/dy_screen от экранного центра
+        игрока и вызвать update_aim()."""
+        player_screen_x = self.player.x - camera_x + self.player.width / 2
+        player_screen_y = self.player.y - camera_y + self.player.height / 2
+        mouse_pos = (int(player_screen_x + dx_screen), int(player_screen_y + dy_screen))
+        with patch('pygame.mouse.get_pos', return_value=mouse_pos):
+            self.player.update_aim(camera_x, camera_y)
+
+    def test_update_aim_right(self):
+        self._aim_at_screen_offset(100, 0)
+        assert self.player.aim_dx == pytest.approx(1.0, abs=0.01)
+        assert self.player.aim_dy == pytest.approx(0.0, abs=0.01)
+        assert self.player.facing_direction == 'right'
+
+    def test_update_aim_down(self):
+        self._aim_at_screen_offset(0, 100)
+        assert self.player.aim_dx == pytest.approx(0.0, abs=0.01)
+        assert self.player.aim_dy == pytest.approx(1.0, abs=0.01)
+        assert self.player.facing_direction == 'down'
+
+    def test_update_aim_up_left_diagonal(self):
+        self._aim_at_screen_offset(-100, -100)
+        assert self.player.aim_dx == pytest.approx(-0.707, abs=0.01)
+        assert self.player.aim_dy == pytest.approx(-0.707, abs=0.01)
+        assert self.player.facing_direction == 'up_left'
+
+    def test_update_aim_arbitrary_angle_not_bucketed_for_geometry(self):
+        """Главное отличие от старой системы: 37° - не один из 8 углов, но
+        aim_dx/aim_dy отражают его точно (только facing_direction строка
+        округляется до ближайшего сектора, боевая геометрия - нет)."""
+        angle = math.radians(37)
+        self._aim_at_screen_offset(math.cos(angle) * 100, math.sin(angle) * 100)
+        assert self.player.aim_dx == pytest.approx(math.cos(angle), abs=0.01)
+        assert self.player.aim_dy == pytest.approx(math.sin(angle), abs=0.01)
+
+    def test_update_aim_accounts_for_camera_offset(self):
+        # Курсор в фиксированной точке экрана, но камера сдвинута - вектор
+        # должен быть рассчитан относительно экранной (не мировой) позиции.
+        with patch('pygame.mouse.get_pos', return_value=(300, 100)):
+            self.player.update_aim(camera_x=50, camera_y=0)
+        # player screen x = 100 - 50 + 16 = 66; курсор на 300 -> явно вправо
+        assert self.player.aim_dx > 0.9
+
+    def test_update_aim_cursor_on_player_keeps_previous_direction(self):
+        self._aim_at_screen_offset(100, 0)  # сначала целимся вправо
+        prev_dx, prev_dy = self.player.aim_dx, self.player.aim_dy
+        self._aim_at_screen_offset(0, 0)  # курсор точно на игроке
+        assert (self.player.aim_dx, self.player.aim_dy) == (prev_dx, prev_dy)
+
+    def test_movement_independent_of_aim(self):
+        """Twin-stick: WASD не должен трогать aim_dx/aim_dy вообще."""
+        self._aim_at_screen_offset(100, 0)  # целимся вправо
+        keys = {
+            pygame.K_LEFT: True, pygame.K_RIGHT: False,
+            pygame.K_UP: False, pygame.K_DOWN: False,
+            pygame.K_a: False, pygame.K_d: False,
+            pygame.K_w: False, pygame.K_s: False,
+            pygame.K_SPACE: False,
+        }
+        self.player.handle_input(keys)  # двигаемся влево
+        assert self.player.direction_x == -1
+        # Прицел не изменился, несмотря на движение в другую сторону
+        assert self.player.aim_dx == pytest.approx(1.0, abs=0.01)
 
     def test_player_health_minimum_zero(self):
         """Test player health cannot go below zero"""

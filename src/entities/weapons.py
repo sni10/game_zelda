@@ -34,18 +34,16 @@ DIRECTION_VECTORS = {
 }
 
 
-def _rect_in_direction(player_rect: pygame.Rect, direction: str,
-                       reach: int, width: int, height: int) -> pygame.Rect:
-    """Создать Rect зоны атаки в указанном направлении от игрока.
+def _rect_in_vector_direction(player_rect: pygame.Rect, dx: float, dy: float,
+                              reach: int, width: int, height: int) -> pygame.Rect:
+    """Создать Rect зоны атаки вдоль произвольного юнит-вектора (dx, dy) -
+    не только 8 фиксированных направлений, любой угол (360° прицеливание).
 
     reach - расстояние ОТ ребра игрока ДО ребра зоны атаки.
             reach=0 - впритык к игроку (меч в руке).
             reach=16 - полклетки зазора (копьё/яри).
             reach=64 - две клетки (стрельба).
-    Симметрично для всех 8 направлений.
     """
-    dx, dy = DIRECTION_VECTORS[direction]
-
     # Полу-размер игрока вдоль вектора направления.
     # Для перпендикулярных - это половина соотв. стороны (16 для 32x32).
     # Для диагоналей - проекция полудиагонали игрока на ось направления.
@@ -60,6 +58,14 @@ def _rect_in_direction(player_rect: pygame.Rect, direction: str,
     cy = player_rect.centery + dy * distance
 
     return pygame.Rect(int(cx - width / 2), int(cy - height / 2), width, height)
+
+
+def _rect_in_direction(player_rect: pygame.Rect, direction: str,
+                       reach: int, width: int, height: int) -> pygame.Rect:
+    """Обёртка над _rect_in_vector_direction для одного из 8 именованных
+    направлений - сохранена ради существующих тестов/вызовов по строке."""
+    dx, dy = DIRECTION_VECTORS[direction]
+    return _rect_in_vector_direction(player_rect, dx, dy, reach, width, height)
 
 
 class Weapon(ABC):
@@ -92,8 +98,9 @@ class Weapon(ABC):
 
     @abstractmethod
     def get_attack_rects(self, player_rect: pygame.Rect,
-                         facing_direction: str) -> List[pygame.Rect]:
-        """Вернуть список зон поражения этой атаки."""
+                         aim_dx: float, aim_dy: float) -> List[pygame.Rect]:
+        """Вернуть список зон поражения этой атаки. (aim_dx, aim_dy) -
+        нормализованный вектор прицела (360°, не только 8 направлений)."""
         raise NotImplementedError
 
 
@@ -112,9 +119,9 @@ class MeleeWeapon(Weapon):
     duration_ms = 250
     cooldown_ms = 120
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        return [_rect_in_direction(player_rect, facing_direction,
-                                   self.reach, self.rect_width, self.rect_height)]
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
+                                          self.reach, self.rect_width, self.rect_height)]
 
 
 class PolearmWeapon(Weapon):
@@ -130,9 +137,9 @@ class PolearmWeapon(Weapon):
     duration_ms = 280
     cooldown_ms = 180
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        return [_rect_in_direction(player_rect, facing_direction,
-                                   self.reach, self.rect_width, self.rect_height)]
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
+                                          self.reach, self.rect_width, self.rect_height)]
 
 
 class RangedWeapon(Weapon):
@@ -158,7 +165,7 @@ class RangedWeapon(Weapon):
     projectile_speed = 480       # px/сек
     projectile_max_range = 420   # px (~13 клеток)
 
-    def get_attack_rects(self, player_rect, facing_direction):
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
         # Урон наносит Projectile, не мгновенный rect - иначе Player.draw()
         # рисовал бы поверх летящей пули ещё и старую статичную рамку.
         return []
@@ -180,9 +187,9 @@ class AoeWeapon(Weapon):
     duration_ms = 400
     cooldown_ms = 600
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        return [_rect_in_direction(player_rect, facing_direction,
-                                   self.reach, self.rect_width, self.rect_height)]
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
+                                          self.reach, self.rect_width, self.rect_height)]
 
 
 # Каталог всех доступных типов оружия по стабильному weapon_id.
