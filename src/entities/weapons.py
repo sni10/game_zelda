@@ -13,7 +13,7 @@
   только нужные параметры или метод get_attack_rects().
 """
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Dict, List, Tuple, Type
 import math
 import pygame
 
@@ -34,18 +34,16 @@ DIRECTION_VECTORS = {
 }
 
 
-def _rect_in_direction(player_rect: pygame.Rect, direction: str,
-                       reach: int, width: int, height: int) -> pygame.Rect:
-    """Создать Rect зоны атаки в указанном направлении от игрока.
+def _rect_in_vector_direction(player_rect: pygame.Rect, dx: float, dy: float,
+                              reach: int, width: int, height: int) -> pygame.Rect:
+    """Создать Rect зоны атаки вдоль произвольного юнит-вектора (dx, dy) -
+    не только 8 фиксированных направлений, любой угол (360° прицеливание).
 
     reach - расстояние ОТ ребра игрока ДО ребра зоны атаки.
             reach=0 - впритык к игроку (меч в руке).
             reach=16 - полклетки зазора (копьё/яри).
             reach=64 - две клетки (стрельба).
-    Симметрично для всех 8 направлений.
     """
-    dx, dy = DIRECTION_VECTORS[direction]
-
     # Полу-размер игрока вдоль вектора направления.
     # Для перпендикулярных - это половина соотв. стороны (16 для 32x32).
     # Для диагоналей - проекция полудиагонали игрока на ось направления.
@@ -62,12 +60,25 @@ def _rect_in_direction(player_rect: pygame.Rect, direction: str,
     return pygame.Rect(int(cx - width / 2), int(cy - height / 2), width, height)
 
 
+def _rect_in_direction(player_rect: pygame.Rect, direction: str,
+                       reach: int, width: int, height: int) -> pygame.Rect:
+    """Обёртка над _rect_in_vector_direction для одного из 8 именованных
+    направлений - сохранена ради существующих тестов/вызовов по строке."""
+    dx, dy = DIRECTION_VECTORS[direction]
+    return _rect_in_vector_direction(player_rect, dx, dy, reach, width, height)
+
+
 class Weapon(ABC):
     """Базовый класс оружия."""
 
     # Метаданные для UI/логов
     name: str = "Weapon"
     color: Tuple[int, int, int] = (255, 255, 0)  # цвет зоны атаки в HUD
+    # Стабильный ключ для каталога/сохранений (не меняется при рефакторинге
+    # display-имени). Category используется для бонуса ближнего боя и как
+    # задел под будущие теги/схемы оружия (модули, аффиксы).
+    weapon_id: str = ""
+    category: str = "melee"  # "melee" | "ranged"
 
     # Параметры зоны поражения (одна клетка-rect)
     reach: int = 0          # зазор от игрока, px (0 = впритык)
@@ -79,16 +90,25 @@ class Weapon(ABC):
     duration_ms: int = 300  # сколько кадров показывается зона атаки
     cooldown_ms: int = 100  # минимальный интервал между атаками
 
+    # Баллистика (только для оружия с fires_projectile=True - см. RangedWeapon).
+    # У melee/AoE оружия остаются дефолты и не используются.
+    fires_projectile: bool = False
+    ammo_type: str = None  # None = не расходует патроны (melee, AoE)
+    magazine_size: int = 0
+
     @abstractmethod
     def get_attack_rects(self, player_rect: pygame.Rect,
-                         facing_direction: str) -> List[pygame.Rect]:
-        """Вернуть список зон поражения этой атаки."""
+                         aim_dx: float, aim_dy: float) -> List[pygame.Rect]:
+        """Вернуть список зон поражения этой атаки. (aim_dx, aim_dy) -
+        нормализованный вектор прицела (360°, не только 8 направлений)."""
         raise NotImplementedError
 
 
 class MeleeWeapon(Weapon):
     """Меч: ближний бой, зона атаки впритык к игроку (reach=0)."""
     name = "Sword"
+    weapon_id = "sword"
+    category = "melee"
     color = (255, 255, 0)        # жёлтая
     reach = 0
     rect_width = 32
@@ -99,14 +119,16 @@ class MeleeWeapon(Weapon):
     duration_ms = 250
     cooldown_ms = 120
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        return [_rect_in_direction(player_rect, facing_direction,
-                                   self.reach, self.rect_width, self.rect_height)]
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
+                                          self.reach, self.rect_width, self.rect_height)]
 
 
 class PolearmWeapon(Weapon):
     """Копьё/яри: средний бой, отступ в полклетки от игрока."""
     name = "Spear"
+    weapon_id = "spear"
+    category = "melee"
     color = (180, 220, 255)      # светло-голубая
     reach = 16
     rect_width = 32
@@ -115,41 +137,38 @@ class PolearmWeapon(Weapon):
     duration_ms = 280
     cooldown_ms = 180
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        return [_rect_in_direction(player_rect, facing_direction,
-                                   self.reach, self.rect_width, self.rect_height)]
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
+                                          self.reach, self.rect_width, self.rect_height)]
 
 
 class RangedWeapon(Weapon):
-    """Лук/стрельба: дальний бой, удар на 2-3 клетки впереди.
-
-    Атака представлена линией из 3 клеток подряд - имитация "трассы стрелы".
-    Каждый враг, попавший хоть в одну клетку трассы, получает 1 удар.
+    """Стрелковое оружие: реальная баллистика - на try_attack() спавнится
+    Projectile (см. src/entities/projectile.py), который сам летит и
+    проверяет столкновения по кадрам в ProjectileManager. get_attack_rects()
+    здесь не используется для урона (см. ниже) - урон наносит снаряд.
     """
-    name = "Bow"
+    name = "Rifle"
+    weapon_id = "rifle"
+    category = "ranged"
     color = (255, 160, 60)       # оранжевая
-    reach = 0  # не используется напрямую - своя логика трассы
+    reach = 0
     rect_width = 32
     rect_height = 32
     damage = 1
     duration_ms = 200
     cooldown_ms = 250
 
-    trace_length = 3  # количество клеток в "трассе" стрелы
+    fires_projectile = True
+    ammo_type = "bullets"
+    magazine_size = 12
+    projectile_speed = 480       # px/сек
+    projectile_max_range = 420   # px (~13 клеток)
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        # Возвращаем N последовательных клеток вдоль направления взгляда,
-        # начиная с reach=0 (впритык) и наращивая на длину одной клетки.
-        rects = []
-        for i in range(self.trace_length):
-            r = _rect_in_direction(
-                player_rect, facing_direction,
-                reach=i * self.rect_width,
-                width=self.rect_width,
-                height=self.rect_height,
-            )
-            rects.append(r)
-        return rects
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        # Урон наносит Projectile, не мгновенный rect - иначе Player.draw()
+        # рисовал бы поверх летящей пули ещё и старую статичную рамку.
+        return []
 
 
 class AoeWeapon(Weapon):
@@ -158,6 +177,8 @@ class AoeWeapon(Weapon):
     Урон = 3 - убивает Heavy с одного попадания, Light/Fast - тем более.
     """
     name = "Bomb"
+    weapon_id = "bomb"
+    category = "ranged"
     color = (255, 80, 80)        # красная
     reach = 48  # 1.5 клетки до центра взрыва
     rect_width = 96   # 3 клетки
@@ -166,17 +187,30 @@ class AoeWeapon(Weapon):
     duration_ms = 400
     cooldown_ms = 600
 
-    def get_attack_rects(self, player_rect, facing_direction):
-        return [_rect_in_direction(player_rect, facing_direction,
-                                   self.reach, self.rect_width, self.rect_height)]
+    def get_attack_rects(self, player_rect, aim_dx, aim_dy):
+        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
+                                          self.reach, self.rect_width, self.rect_height)]
 
 
-def default_loadout() -> List[Weapon]:
-    """Стандартный набор оружий игрока (порядок == клавиши 1..N)."""
-    return [
-        MeleeWeapon(),    # 1
-        PolearmWeapon(),  # 2
-        RangedWeapon(),   # 3
-        AoeWeapon(),      # 4
-    ]
+# Каталог всех доступных типов оружия по стабильному weapon_id.
+# Порядок словаря = порядок циклической смены оружия в слоте (см.
+# PlayerCombat.cycle_slot_weapon). Единственный источник правды и для
+# создания оружия по id (сохранения), и для стартовой раскладки.
+WEAPON_CATALOG: Dict[str, Type[Weapon]] = {
+    "sword": MeleeWeapon,
+    "spear": PolearmWeapon,
+    "rifle": RangedWeapon,
+    "bomb": AoeWeapon,
+}
+
+
+def create_weapon(weapon_id: str) -> Weapon:
+    """Создать экземпляр оружия по стабильному id из WEAPON_CATALOG."""
+    return WEAPON_CATALOG[weapon_id]()
+
+
+def starting_slot_assignment() -> List[str]:
+    """Стартовая раскладка слотов нового игрока: 2 слота, оба - мечи
+    (ближний бой)."""
+    return ["sword", "spear"]
 

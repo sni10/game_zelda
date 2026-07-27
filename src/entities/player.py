@@ -1,8 +1,8 @@
 import pygame
 import math
 from src.core.config_loader import get_config, get_color
-from src.entities.weapons import Weapon, default_loadout
-from src.entities.player_stats import PlayerStats
+from src.entities.weapons import Weapon
+from src.entities.player_stats import PlayerStats, unlocked_weapon_slots
 from src.entities.player_combat import PlayerCombat
 
 
@@ -20,16 +20,25 @@ class Player:
         self.sprint_multiplier = get_config('PLAYER_SPRINT_MULTIPLIER')
         self.is_sprinting = False
 
-        # Направление движения
+        # Направление движения (WASD) - полностью независимо от прицела/атаки
+        # (twin-stick: "как турель" - движешься куда угодно, целишься мышью).
         self.direction_x = 0
         self.direction_y = 0
+
+        # Прицел (360°, мышь) - непрерывный юнит-вектор, источник геометрии
+        # атаки/снарядов. Дефолт "смотрит вниз", как раньше facing_direction.
+        self.aim_dx = 0.0
+        self.aim_dy = 1.0
+        # facing_direction - производная строка (ближайшее из 8 названий) для
+        # формата сохранений и debug-текста. Не используется боевой геометрией.
         self.facing_direction = 'down'
-        # Были ли обе оси нажаты в прошлом кадре (для залочки диагонали)
-        self._prev_both_axes = False
 
         # Делегаты: здоровье и боевая система
         self._stats = PlayerStats(get_config('PLAYER_MAX_HEALTH'))
         self._combat = PlayerCombat()
+        # Разлочка слотов оружия по уровню - PlayerStats не знает про
+        # PlayerCombat, поэтому дёргает Player через колбэк.
+        self._stats.on_level_up = self._handle_level_up
 
         # Cooldown урона от окружения
         self.last_damage_time = 0
@@ -168,12 +177,61 @@ class Player:
     def switch_weapon(self, index: int) -> bool:
         return self._combat.switch_weapon(index)
 
+    def cycle_slot_weapon(self, index: int) -> bool:
+        return self._combat.cycle_slot_weapon(index)
+
+    def move_weapon(self, from_index: int, to_index: int) -> bool:
+        return self._combat.move_weapon(from_index, to_index)
+
+    def unlock_slot(self) -> bool:
+        return self._combat.unlock_slot()
+
+    # --- Патроны (делегирует PlayerCombat) ----------------------------------
+
+    @property
+    def magazine(self):
+        """dict ammo_type -> кол-во в магазине (тот же объект, не копия -
+        нужно save_system'у чтобы мутировать через .clear()/.update())."""
+        return self._combat.magazine
+
+    @property
+    def reserve(self):
+        """dict ammo_type -> кол-во в резерве."""
+        return self._combat.reserve
+
+    def reload(self) -> bool:
+        return self._combat.reload()
+
+    def add_ammo(self, ammo_type: str, amount: int, cap: int) -> None:
+        self._combat.add_ammo(ammo_type, amount, cap)
+
+    def magazine_count(self, ammo_type: str = None) -> int:
+        if ammo_type is None:
+            ammo_type = self.current_weapon.ammo_type
+        if not ammo_type:
+            return 0
+        return self._combat.magazine.get(ammo_type, 0)
+
+    def reserve_count(self, ammo_type: str = None) -> int:
+        if ammo_type is None:
+            ammo_type = self.current_weapon.ammo_type
+        if not ammo_type:
+            return 0
+        return self._combat.reserve.get(ammo_type, 0)
+
+    def _handle_level_up(self, new_level: int) -> None:
+        """Колбэк из PlayerStats: открыть слоты оружия, положенные по уровню."""
+        target = unlocked_weapon_slots(new_level)
+        while len(self._combat.weapons) < target:
+            if not self._combat.unlock_slot():
+                break
+
     def try_attack(self):
         self._combat.try_attack()
 
     def get_attack_rects(self):
         """Получить все прямоугольники зон поражения текущей атаки."""
-        return self._combat.get_attack_rects(self.rect, self.facing_direction)
+        return self._combat.get_attack_rects(self.rect, self.aim_dx, self.aim_dy)
 
     def get_attack_rect(self):
         """Совместимость: вернуть первую зону атаки или None."""
@@ -190,19 +248,9 @@ class Player:
         except (KeyError, IndexError):
             return False
 
-    def _set_cardinal_facing(self):
-        """Установить кардинальное facing из текущего direction."""
-        if self.direction_x == -1:
-            self.facing_direction = 'left'
-        elif self.direction_x == 1:
-            self.facing_direction = 'right'
-        elif self.direction_y == -1:
-            self.facing_direction = 'up'
-        elif self.direction_y == 1:
-            self.facing_direction = 'down'
-
     def handle_input(self, keys):
-        """Обработка ввода с клавиатуры"""
+        """Обработка ввода с клавиатуры (движение). Прицел/атака направлением
+        мыши считаются отдельно в update_aim() - не здесь."""
         # Сброс направления
         self.direction_x = 0
         self.direction_y = 0
@@ -213,7 +261,7 @@ class Player:
             or self._is_key_pressed(keys, pygame.K_RSHIFT)
         )
 
-        # Движение по 8 направлениям
+        # Движение по 8 направлениям - независимо от прицела (twin-stick)
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.direction_x = -1
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
@@ -222,44 +270,41 @@ class Player:
             self.direction_y = -1
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.direction_y = 1
-            
-        # Определяем направление взгляда на основе движения (8 направлений).
-        # Логика:
-        #  - Обе оси нажаты → facing = диагональ (всегда)
-        #  - Одна ось нажата И в прошлом кадре были обе → "отпускание" → facing сохраняется
-        #  - Одна ось нажата И в прошлом кадре тоже одна → facing = кардинальное
-        #  - Ничего не нажато → facing сохраняется (можно бить стоя)
-        both_axes = (self.direction_x != 0 and self.direction_y != 0)
-
-        if both_axes:
-            # Чистая диагональ
-            if self.direction_x == -1 and self.direction_y == -1:
-                self.facing_direction = 'up_left'
-            elif self.direction_x == 1 and self.direction_y == -1:
-                self.facing_direction = 'up_right'
-            elif self.direction_x == -1 and self.direction_y == 1:
-                self.facing_direction = 'down_left'
-            else:
-                self.facing_direction = 'down_right'
-        elif self.direction_x != 0 or self.direction_y != 0:
-            # Одна ось нажата
-            if not self._prev_both_axes:
-                # В прошлом кадре тоже была одна ось (или ноль) → обновляем
-                self._set_cardinal_facing()
-            # Иначе: в прошлом кадре были обе → только что отпустили вторую
-            # клавишу → сохраняем диагональный facing (залочка на 1 кадр)
-        # Ничего не нажато → facing остаётся
-
-        self._prev_both_axes = both_axes
 
         # Нормализация диагонального движения
         if self.direction_x != 0 and self.direction_y != 0:
             self.direction_x *= 0.707  # 1/sqrt(2)
             self.direction_y *= 0.707
-            
-        # Атака на пробел
+
+        # Атака на пробел (в текущем направлении прицела - см. update_aim)
         if keys[pygame.K_SPACE]:
             self.try_attack()
+
+    _FACING_8WAY = (
+        'right', 'down_right', 'down', 'down_left',
+        'left', 'up_left', 'up', 'up_right',
+    )
+
+    def update_aim(self, camera_x: float, camera_y: float) -> None:
+        """Обновить направление прицела по позиции мыши - непрерывный вектор
+        (360°), не завязан на движение ("как турель"). camera_x/camera_y -
+        для перевода экранных координат курсора в мировые относительно игрока."""
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        player_screen_x = self.x - camera_x + self.width / 2
+        player_screen_y = self.y - camera_y + self.height / 2
+        dx = mouse_x - player_screen_x
+        dy = mouse_y - player_screen_y
+        dist = math.hypot(dx, dy)
+        if dist < 1:
+            # Курсор точно на игроке - направление не меняем (не делим на 0).
+            return
+        self.aim_dx = dx / dist
+        self.aim_dy = dy / dist
+
+        # facing_direction - косметика/совместимость с save-форматом и debug.
+        angle = math.degrees(math.atan2(self.aim_dy, self.aim_dx)) % 360
+        sector = int((angle + 22.5) // 45) % 8
+        self.facing_direction = self._FACING_8WAY[sector]
 
     def update(self, dt, world, game_stats=None):
         """Обновление состояния игрока"""
@@ -334,27 +379,16 @@ class Player:
         color = get_color('RED') if self.attacking else get_color('GREEN')
         pygame.draw.rect(screen, color, (screen_x, screen_y, self.width, self.height))
         
-        # Направление взгляда
+        # Направление прицела (360°, следует за мышью) - точка на краю
+        # игрока вдоль (aim_dx, aim_dy), а не одна из 8 фиксированных позиций.
         center_x = screen_x + self.width // 2
         center_y = screen_y + self.height // 2
-        
-        if self.facing_direction == 'up':
-            pygame.draw.circle(screen, get_color('WHITE'), (center_x, screen_y + 5), 3)
-        elif self.facing_direction == 'down':
-            pygame.draw.circle(screen, get_color('WHITE'), (center_x, screen_y + self.height - 5), 3)
-        elif self.facing_direction == 'left':
-            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + 5, center_y), 3)
-        elif self.facing_direction == 'right':
-            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, center_y), 3)
-        elif self.facing_direction == 'up_left':
-            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + 5, screen_y + 5), 3)
-        elif self.facing_direction == 'up_right':
-            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, screen_y + 5), 3)
-        elif self.facing_direction == 'down_left':
-            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + 5, screen_y + self.height - 5), 3)
-        elif self.facing_direction == 'down_right':
-            pygame.draw.circle(screen, get_color('WHITE'), (screen_x + self.width - 5, screen_y + self.height - 5), 3)
-        
+        radius = self.width / 2 - 3
+        dot_x = int(center_x + self.aim_dx * radius)
+        dot_y = int(center_y + self.aim_dy * radius)
+        pygame.draw.circle(screen, get_color('WHITE'), (dot_x, dot_y), 3)
+
+
         # Зоны атаки
         if self.attacking:
             weapon = self.current_weapon
