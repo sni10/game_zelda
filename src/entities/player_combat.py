@@ -148,9 +148,11 @@ class PlayerCombat:
             if current_time - self.attack_timer > self.current_weapon.duration_ms:
                 self.attacking = False
 
-    def get_attack_rects(self, player_rect: pygame.Rect, facing_direction: str) -> list:
-        """Получить зоны поражения текущей атаки."""
+    def get_attack_rects(self, player_rect: pygame.Rect,
+                         aim_dx: float, aim_dy: float) -> list:
+        """Получить зоны поражения текущей атаки в направлении прицела
+        (непрерывный вектор, 360° - не только 8 фиксированных направлений)."""
         if not self.attacking:
             return []
-        return self.current_weapon.get_attack_rects(player_rect, facing_direction)
+        return self.current_weapon.get_attack_rects(player_rect, aim_dx, aim_dy)
 

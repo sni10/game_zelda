@@ -148,6 +148,35 @@ class EnemyManager:
                     spawned += 1
         return spawned
 
+    def _apply_separation(self) -> None:
+        """Лёгкое взаимное отталкивание живых врагов, чтобы не слипались в
+        кучу при погоне толпой - каждый враг целится независимо в игрока,
+        ничего не зная о соседях. O(n^2) по живым врагам - при типичных
+        ~12-20 врагах пренебрежимо дёшево. Столкновения со стенами при
+        отталкивании не проверяются (сознательно, минорный краевой случай)."""
+        alive = [e for e in self.enemies if not e.is_dead()]
+        for i in range(len(alive)):
+            for j in range(i + 1, len(alive)):
+                a, b = alive[i], alive[j]
+                if not a.rect.colliderect(b.rect):
+                    continue
+                dx = (a.x + a.rect.width / 2) - (b.x + b.rect.width / 2)
+                dy = (a.y + a.rect.height / 2) - (b.y + b.rect.height / 2)
+                dist = math.hypot(dx, dy) or 1.0
+                min_dist = ((a.rect.width + b.rect.width) / 4
+                            + (a.rect.height + b.rect.height) / 4)
+                overlap = min_dist - dist
+                if overlap <= 0:
+                    continue
+                push = overlap / 2
+                nx, ny = dx / dist, dy / dist
+                a.x += nx * push
+                a.y += ny * push
+                b.x -= nx * push
+                b.y -= ny * push
+                a.rect.x, a.rect.y = int(a.x), int(a.y)
+                b.rect.x, b.rect.y = int(b.x), int(b.y)
+
     # --- Обновление --------------------------------------------------------
 
     def update(self, dt: float, player_x: float = None, player_y: float = None,
@@ -161,6 +190,10 @@ class EnemyManager:
         """
         for enemy in self.enemies:
             enemy.update(dt, self.world, player)
+        # Сепарация - враги ничего не знают друг о друге в своём AI, без
+        # этого толпа при погоне накладывается друг на друга (визуально
+        # хаотично). Лёгкое взаимное отталкивание после хода AI.
+        self._apply_separation()
         # Drop loot с мёртвых ПЕРЕД удалением
         self._drop_loot_from_dead(player)
         # Чистим мёртвых

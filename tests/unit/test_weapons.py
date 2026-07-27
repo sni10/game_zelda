@@ -8,13 +8,14 @@
 - RangedWeapon (Rifle) - реальная баллистика через Projectile, не мгновенный rect.
 - Переключение оружий в Player.switch_weapon().
 """
+import math
 import os
 import pytest
 import pygame
 
 from src.entities.weapons import (
     MeleeWeapon, PolearmWeapon, RangedWeapon, AoeWeapon,
-    DIRECTION_VECTORS, _rect_in_direction,
+    DIRECTION_VECTORS, _rect_in_direction, _rect_in_vector_direction,
     WEAPON_CATALOG, create_weapon, starting_slot_assignment,
 )
 
@@ -84,6 +85,50 @@ class TestSymmetry:
         assert (ur.centery - cy) == -(dl.centery - cy)
 
 
+class TestVectorDirection:
+    """_rect_in_vector_direction - произвольный угол (360° прицеливание),
+    не только 8 фиксированных направлений. _rect_in_direction (8-way) теперь
+    тонкая обёртка над этой функцией - её поведение уже покрыто TestSymmetry
+    и не меняется."""
+
+    def test_matches_named_direction_for_canonical_vectors(self, player_rect):
+        """На канонических 8 векторах результат идентичен старой функции."""
+        for name, (dx, dy) in DIRECTION_VECTORS.items():
+            expected = _rect_in_direction(player_rect, name, 16, 32, 32)
+            actual = _rect_in_vector_direction(player_rect, dx, dy, 16, 32, 32)
+            assert actual == expected
+
+    def test_arbitrary_angle_returns_valid_rect(self, player_rect):
+        """Угол, не кратный 45° (37°) - всё ещё валидный rect."""
+        angle = math.radians(37)
+        dx, dy = math.cos(angle), math.sin(angle)
+        rect = _rect_in_vector_direction(player_rect, dx, dy, 16, 32, 32)
+        assert isinstance(rect, pygame.Rect)
+        assert rect.width == 32 and rect.height == 32
+
+    def test_arbitrary_angle_is_further_from_center_than_reach_zero(self, player_rect):
+        """При том же угле больший reach даёт зону дальше от игрока."""
+        angle = math.radians(37)
+        dx, dy = math.cos(angle), math.sin(angle)
+        near = _rect_in_vector_direction(player_rect, dx, dy, 0, 32, 32)
+        far = _rect_in_vector_direction(player_rect, dx, dy, 40, 32, 32)
+        cx, cy = player_rect.center
+        dist_near = math.hypot(near.centerx - cx, near.centery - cy)
+        dist_far = math.hypot(far.centerx - cx, far.centery - cy)
+        assert dist_far > dist_near
+
+    def test_opposite_angles_are_mirrored(self, player_rect):
+        """Произвольный угол и его противоположность (180°) зеркальны
+        относительно центра игрока - та же симметрия, что и для 8-way."""
+        angle = math.radians(37)
+        dx, dy = math.cos(angle), math.sin(angle)
+        a = _rect_in_vector_direction(player_rect, dx, dy, 16, 32, 32)
+        b = _rect_in_vector_direction(player_rect, -dx, -dy, 16, 32, 32)
+        cx, cy = player_rect.center
+        assert (a.centerx - cx) == pytest.approx(-(b.centerx - cx), abs=1)
+        assert (a.centery - cy) == pytest.approx(-(b.centery - cy), abs=1)
+
+
 # --- Поведение конкретных оружий -------------------------------------------
 
 class TestMeleeWeapon:
@@ -92,12 +137,12 @@ class TestMeleeWeapon:
     def test_no_gap(self, player_rect):
         sword = MeleeWeapon()
         assert sword.reach == 0
-        rect = sword.get_attack_rects(player_rect, 'right')[0]
+        rect = sword.get_attack_rects(player_rect, *DIRECTION_VECTORS['right'])[0]
         # Зона начинается ровно на правом ребре игрока
         assert rect.left == player_rect.right
 
     def test_returns_single_rect(self, player_rect):
-        rects = MeleeWeapon().get_attack_rects(player_rect, 'up')
+        rects = MeleeWeapon().get_attack_rects(player_rect, *DIRECTION_VECTORS['up'])
         assert len(rects) == 1
 
 
@@ -107,7 +152,7 @@ class TestPolearmWeapon:
     def test_half_tile_gap(self, player_rect):
         spear = PolearmWeapon()
         assert spear.reach == 16
-        rect = spear.get_attack_rects(player_rect, 'right')[0]
+        rect = spear.get_attack_rects(player_rect, *DIRECTION_VECTORS['right'])[0]
         gap = rect.left - player_rect.right
         assert gap == 16
 
@@ -119,7 +164,7 @@ class TestRangedWeapon:
         """Урон наносит Projectile, get_attack_rects() пуст (иначе
         Player.draw() рисовал бы поверх летящей пули старую рамку)."""
         rifle = RangedWeapon()
-        assert rifle.get_attack_rects(player_rect, 'right') == []
+        assert rifle.get_attack_rects(player_rect, *DIRECTION_VECTORS['right']) == []
 
     def test_fires_projectile_flag(self):
         assert RangedWeapon.fires_projectile is True
@@ -142,7 +187,7 @@ class TestAoeWeapon:
 
     def test_large_area(self, player_rect):
         bomb = AoeWeapon()
-        rect = bomb.get_attack_rects(player_rect, 'right')[0]
+        rect = bomb.get_attack_rects(player_rect, *DIRECTION_VECTORS['right'])[0]
         assert rect.width == 96
         assert rect.height == 96
 
