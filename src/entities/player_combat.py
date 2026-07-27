@@ -76,6 +76,23 @@ class PlayerCombat:
         self.weapons[index] = create_weapon(catalog_ids[next_index])
         return True
 
+    def move_weapon(self, from_index: int, to_index: int) -> bool:
+        """Поменять местами оружие в двух слотах (своп, не сдвиг). Для
+        drag-and-drop в InventoryScreen. current_weapon_index не трогаем -
+        активным остаётся то, что физически лежит в этом слоте после свопа
+        (тот же принцип, что уже работает для cycle_slot_weapon)."""
+        if self.attacking:
+            return False
+        n = len(self.weapons)
+        if not (0 <= from_index < n and 0 <= to_index < n):
+            return False
+        if from_index == to_index:
+            return False
+        self.weapons[from_index], self.weapons[to_index] = (
+            self.weapons[to_index], self.weapons[from_index]
+        )
+        return True
+
     def unlock_slot(self) -> bool:
         """Открыть новый слот оружия (до MAX_WEAPON_SLOTS), заполнив его
         первым оружием из каталога. Возвращает True если слот добавлен."""
