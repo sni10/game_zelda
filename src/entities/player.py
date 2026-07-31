@@ -180,8 +180,8 @@ class Player:
     def switch_weapon(self, index: int) -> bool:
         return self._combat.switch_weapon(index)
 
-    def cycle_slot_weapon(self, index: int) -> bool:
-        return self._combat.cycle_slot_weapon(index)
+    def set_slot_weapon(self, index: int, weapon_id: str) -> bool:
+        return self._combat.set_slot_weapon(index, weapon_id)
 
     def move_weapon(self, from_index: int, to_index: int) -> bool:
         return self._combat.move_weapon(from_index, to_index)
