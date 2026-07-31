@@ -49,6 +49,14 @@ class TestProjectileMovement:
         p = Projectile(50, 50, 1.0, 0.0, speed=100, damage=1, max_range=100)
         p.draw(screen, 0, 0)
 
+    def test_hitbox_is_5_percent_larger_than_visual_size(self):
+        """Хитбокс (rect) намеренно чуть больше видимого круга (+5%) - более
+        прощающие попадания без изменения того, что видит игрок."""
+        assert Projectile.HITBOX_SIZE > Projectile.SIZE
+        p = Projectile(50, 50, 1.0, 0.0, speed=100, damage=1, max_range=100)
+        assert p.rect.width == Projectile.HITBOX_SIZE
+        assert p.rect.height == Projectile.HITBOX_SIZE
+
 
 @pytest.fixture
 def world():

@@ -68,6 +68,28 @@ def _rect_in_direction(player_rect: pygame.Rect, direction: str,
     return _rect_in_vector_direction(player_rect, dx, dy, reach, width, height)
 
 
+def pellet_directions(aim_dx: float, aim_dy: float, pellet_count: int,
+                      spread_angle_deg: float) -> List[Tuple[float, float]]:
+    """Вернуть pellet_count юнит-векторов направлений для одного залпа.
+
+    pellet_count<=1 - вернуть только (aim_dx, aim_dy) без веера (Rifle/SMG).
+    pellet_count>1 (Shotgun) - равномерный веер в пределах spread_angle_deg
+    градусов вокруг направления прицела; при нечётном pellet_count один из
+    векторов всегда приходится точно на центральную ось прицела (i == середина).
+    """
+    if pellet_count <= 1:
+        return [(aim_dx, aim_dy)]
+    base_angle = math.atan2(aim_dy, aim_dx)
+    spread = math.radians(spread_angle_deg)
+    return [
+        (math.cos(angle), math.sin(angle))
+        for angle in (
+            base_angle + spread * (i / (pellet_count - 1) - 0.5)
+            for i in range(pellet_count)
+        )
+    ]
+
+
 class Weapon(ABC):
     """Базовый класс оружия."""
 
@@ -95,6 +117,21 @@ class Weapon(ABC):
     fires_projectile: bool = False
     ammo_type: str = None  # None = не расходует патроны (melee, AoE)
     magazine_size: int = 0
+    # 1 нажатие = 1 патрон всегда, независимо от того, сколько снарядов
+    # реально вылетает (burst_count/pellet_count) - магазин на 9 патронов
+    # даёт 9 выстрелов и у дробовика (5 пуль/выстрел), и у SMG (3 пули/выстрел).
+
+    # Очередь (burst-fire, см. BurstRifle): burst_count последовательных
+    # выстрелов с интервалом burst_delay_ms внутри одного attack_id - таймингом
+    # рулит Game._spawn_projectile/update() (см. game.py), не Weapon.
+    burst_count: int = 1
+    burst_delay_ms: int = 0
+
+    # Дробовик (веерный разлёт, см. ShotgunWeapon): pellet_count пуль за
+    # один выстрел, равномерно распределённых по spread_angle_deg градусов
+    # вокруг направления прицела (см. Game._spawn_projectile).
+    pellet_count: int = 1
+    spread_angle_deg: float = 0.0
 
     @abstractmethod
     def get_attack_rects(self, player_rect: pygame.Rect,
@@ -163,12 +200,63 @@ class RangedWeapon(Weapon):
     ammo_type = "bullets"
     magazine_size = 12
     projectile_speed = 480       # px/сек
-    projectile_max_range = 420   # px (~13 клеток)
+    # Скорострельное оружие - дистанцию не ограничиваем: пуля летит, пока
+    # не упрётся в стену/границу мира (см. ProjectileManager), не по таймеру.
+    projectile_max_range = float('inf')
 
     def get_attack_rects(self, player_rect, aim_dx, aim_dy):
         # Урон наносит Projectile, не мгновенный rect - иначе Player.draw()
         # рисовал бы поверх летящей пули ещё и старую статичную рамку.
         return []
+
+
+class BurstRifle(RangedWeapon):
+    """SMG: очередь по 3 пули за одно нажатие пробела/ЛКМ, но расходует
+    ровно 1 патрон из магазина (как и одиночный Rifle) - магазин на 24
+    патрона даёт 24 очереди (72 пули), не 8.
+
+    Выстрелы разнесены во времени (burst_delay_ms), не мгновенны все разом -
+    таймингом рулит Game.update() (см. _burst_shots_fired в game.py).
+    """
+    name = "SMG"
+    weapon_id = "smg"
+    color = (255, 205, 60)       # золотисто-жёлтая (отличима от Rifle)
+    reach = 0
+    damage = 1
+    duration_ms = 260            # покрывает все 3 выстрела очереди с запасом
+    cooldown_ms = 380            # общий откат после всей очереди
+
+    fires_projectile = True
+    ammo_type = "bullets"
+    magazine_size = 24
+    projectile_speed = 520
+    # Скорострельное оружие - без ограничения дистанции (см. RangedWeapon).
+
+    burst_count = 3
+    burst_delay_ms = 70          # интервал между выстрелами очереди, мс
+
+
+class ShotgunWeapon(RangedWeapon):
+    """Дробовик: 5 пуль веером за один выстрел - одна точно по центральной
+    оси прицела, остальные симметрично расходятся по spread_angle_deg."""
+    name = "Shotgun"
+    weapon_id = "shotgun"
+    color = (255, 110, 30)       # тёмно-оранжевая
+    reach = 0
+    damage = 1                   # за пульку - до 5 суммарно в упор
+    duration_ms = 220
+    cooldown_ms = 550            # медленнее и мощнее одиночного выстрела
+
+    fires_projectile = True
+    ammo_type = "bullets"
+    magazine_size = 6
+    projectile_speed = 460
+    # Единственное оружие с ограничением дальности (см. RangedWeapon) - это
+    # его штатный диапазон, дополнительно увеличенный на ~12%.
+    projectile_max_range = 470   # было 420 (старый дефолт Rifle) * 1.12
+
+    pellet_count = 5
+    spread_angle_deg = 30        # ±15° от центральной оси прицела
 
 
 class AoeWeapon(Weapon):
@@ -200,6 +288,8 @@ WEAPON_CATALOG: Dict[str, Type[Weapon]] = {
     "sword": MeleeWeapon,
     "spear": PolearmWeapon,
     "rifle": RangedWeapon,
+    "smg": BurstRifle,
+    "shotgun": ShotgunWeapon,
     "bomb": AoeWeapon,
 }
 

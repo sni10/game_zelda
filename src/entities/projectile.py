@@ -6,13 +6,19 @@ Single Responsibility: хранить позицию/направление/ск
 (симметрично тому, как Weapon не занимается коллизиями, а EnemyManager их
 применяет к attack_rects).
 """
+import math
+
 import pygame
 
 
 class Projectile:
     """Один летящий снаряд."""
 
-    SIZE = 6  # размер хитбокса/визуала, px
+    SIZE = 6  # визуальный размер круга, px (радиус отрисовки = SIZE // 2)
+    # Хитбокс на 5% больше визуала - чуть более прощающие попадания без
+    # изменения того, что видит игрок. ceil, иначе 6*1.05=6.3 обратно
+    # округлится в 6 на пиксельной сетке pygame.Rect и увеличение исчезнет.
+    HITBOX_SIZE = math.ceil(SIZE * 1.05)
 
     def __init__(self, x: float, y: float, dx: float, dy: float,
                  speed: float, damage: int, max_range: float,
@@ -29,7 +35,8 @@ class Projectile:
         self.traveled = 0.0
         self.expired = False
         self.rect = pygame.Rect(
-            int(x - self.SIZE / 2), int(y - self.SIZE / 2), self.SIZE, self.SIZE
+            int(x - self.HITBOX_SIZE / 2), int(y - self.HITBOX_SIZE / 2),
+            self.HITBOX_SIZE, self.HITBOX_SIZE
         )
 
     def update(self, dt: float) -> None:
@@ -41,8 +48,8 @@ class Projectile:
         self.x += self.dx * step
         self.y += self.dy * step
         self.traveled += step
-        self.rect.x = int(self.x - self.SIZE / 2)
-        self.rect.y = int(self.y - self.SIZE / 2)
+        self.rect.x = int(self.x - self.HITBOX_SIZE / 2)
+        self.rect.y = int(self.y - self.HITBOX_SIZE / 2)
         if self.traveled >= self.max_range:
             self.expired = True
 
