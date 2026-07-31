@@ -20,8 +20,11 @@ class Player:
         self.sprint_multiplier = get_config('PLAYER_SPRINT_MULTIPLIER')
         self.is_sprinting = False
 
-        # Направление движения (WASD) - полностью независимо от прицела/атаки
-        # (twin-stick: "как турель" - движешься куда угодно, целишься мышью).
+        # Направление движения - результат W/A/S/D относительно направления
+        # прицела (см. handle_input): вперёд/назад вдоль (aim_dx, aim_dy),
+        # влево/вправо перпендикулярно ему. Не twin-stick - игрок вращается
+        # на месте прицелом (мышь), а движение всегда "танковое" относительно
+        # того, куда он сейчас смотрит.
         self.direction_x = 0
         self.direction_y = 0
 
@@ -249,8 +252,12 @@ class Player:
             return False
 
     def handle_input(self, keys):
-        """Обработка ввода с клавиатуры (движение). Прицел/атака направлением
-        мыши считаются отдельно в update_aim() - не здесь."""
+        """Обработка ввода с клавиатуры (движение). Атака направлением мыши
+        считается отдельно в update_aim() - но именно её результат
+        (aim_dx, aim_dy) задаёт оси движения W/A/S/D ниже: игрок вращается
+        на месте прицелом, а W/S двигают его вперёд/назад вдоль этого
+        направления, A/D - вбок (strafe), перпендикулярно ему. Стрелки
+        движение не дают - только WASD."""
         # Сброс направления
         self.direction_x = 0
         self.direction_y = 0
@@ -261,20 +268,29 @@ class Player:
             or self._is_key_pressed(keys, pygame.K_RSHIFT)
         )
 
-        # Движение по 8 направлениям - независимо от прицела (twin-stick)
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            self.direction_x = -1
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            self.direction_x = 1
-        if keys[pygame.K_UP] or keys[pygame.K_w]:
-            self.direction_y = -1
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            self.direction_y = 1
+        # W/S - вперёд/назад вдоль вектора прицела (aim_dx, aim_dy).
+        forward = 0
+        if keys[pygame.K_w]:
+            forward += 1
+        if keys[pygame.K_s]:
+            forward -= 1
+        # A/D - вбок (strafe), перпендикулярно прицелу. "Вправо" при взгляде
+        # (aim_dx, aim_dy) - вектор (-aim_dy, aim_dx) (экранные координаты,
+        # y вниз: поворот на 90° по часовой стрелке от взгляда игрока).
+        strafe = 0
+        if keys[pygame.K_d]:
+            strafe += 1
+        if keys[pygame.K_a]:
+            strafe -= 1
 
-        # Нормализация диагонального движения
-        if self.direction_x != 0 and self.direction_y != 0:
-            self.direction_x *= 0.707  # 1/sqrt(2)
-            self.direction_y *= 0.707
+        # Нормализация диагонального движения (W+A/W+D/S+A/S+D)
+        if forward != 0 and strafe != 0:
+            forward *= 0.707  # 1/sqrt(2)
+            strafe *= 0.707
+
+        right_dx, right_dy = -self.aim_dy, self.aim_dx
+        self.direction_x = forward * self.aim_dx + strafe * right_dx
+        self.direction_y = forward * self.aim_dy + strafe * right_dy
 
         # Атака на пробел (в текущем направлении прицела - см. update_aim)
         if keys[pygame.K_SPACE]:
