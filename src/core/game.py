@@ -23,6 +23,7 @@ from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
 from src.entities.projectile import Projectile
+from src.entities.weapons import pellet_directions
 from src.world.world import World
 from src.systems.save_system import SaveSystem
 from src.systems.pickup_manager import PickupManager
@@ -86,6 +87,9 @@ class Game:
         # заспавнен снаряд - не даёт заспавнить несколько снарядов за одно
         # нажатие (attacking держится duration_ms, т.е. несколько кадров).
         self._last_fired_attack_id = -1
+        # Счётчик выстрелов, уже сделанных в рамках текущей очереди
+        # (burst_count>1, см. SMG) - сбрасывается при новом attack_id.
+        self._burst_shots_fired = 0
 
         # Экран инвентаря (v0.4.x) — лениво создаётся, как save_load_menu.
         # Открывается только из PLAYING, поэтому отдельной "return state"
@@ -133,6 +137,7 @@ class Game:
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
         self._last_fired_attack_id = -1
+        self._burst_shots_fired = 0
 
         # Статистика и Game Over экран
         self.game_stats = GameStats()
@@ -165,12 +170,15 @@ class Game:
             # ЛКМ дополнительно к Space атакует в текущем направлении прицела
             # (прицел следует за мышью - см. Player.update_aim). Пробел
             # по-прежнему работает как раньше, это не замена, а альтернатива.
-            if (self.state == GameState.PLAYING
-                    and event.type == pygame.MOUSEBUTTONDOWN
-                    and event.button == 1):
-                if self.player:
-                    self.player.try_attack()
-                continue
+            # ПКМ дополнительно к R перезаряжает текущее оружие.
+            if self.state == GameState.PLAYING and event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    if self.player:
+                        self.player.try_attack()
+                    continue
+                if event.button == 3:
+                    self._reload_current_weapon()
+                    continue
 
             if event.type != pygame.KEYDOWN:
                 continue
@@ -237,16 +245,19 @@ class Game:
                         "IMPORTANT",
                     )
         elif event.key == pygame.K_r:
-            # Перезарядка текущего оружия (если у него есть ammo_type)
-            if self.player and self.player.reload():
-                w = self.player.current_weapon
-                self.log(
-                    f"🔃 Перезарядка {w.name}: "
-                    f"{self.player.magazine_count()}/{self.player.reserve_count()}",
-                    "IMPORTANT",
-                )
+            self._reload_current_weapon()
         elif event.key == pygame.K_i:
             self._open_inventory()
+
+    def _reload_current_weapon(self) -> None:
+        """Перезарядка текущего оружия (R или ПКМ - см. _handle_events)."""
+        if self.player and self.player.reload():
+            w = self.player.current_weapon
+            self.log(
+                f"🔃 Перезарядка {w.name}: "
+                f"{self.player.magazine_count()}/{self.player.reserve_count()}",
+                "IMPORTANT",
+            )
 
     def _open_inventory(self):
         """Открыть экран инвентаря (I). Пауза приходит бесплатно - update()
@@ -418,6 +429,7 @@ class Game:
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
         self._last_fired_attack_id = -1
+        self._burst_shots_fired = 0
         self.state = GameState.PLAYING
 
     def _handle_game_over_key(self, event):
@@ -455,16 +467,25 @@ class Game:
         # Если игрок атакует - применяем урон врагам.
         # apply_player_attack использует attack_id, чтобы 1 атака
         # = 1 урон каждому затронутому врагу (даже если зона держится
-        # 200-400мс на нём). Оружие со fires_projectile=True (Rifle) не
-        # бьёт мгновенно - вместо этого спавнит Projectile ровно один раз
-        # за attack_id (см. _last_fired_attack_id), урон наносит сам снаряд
-        # по кадрам в ProjectileManager.
+        # 200-400мс на нём). Оружие со fires_projectile=True (Rifle/SMG/
+        # Shotgun) не бьёт мгновенно - вместо этого спавнит Projectile(ы),
+        # урон наносит сам снаряд по кадрам в ProjectileManager.
+        # burst_count>1 (SMG) - несколько выстрелов с интервалом
+        # burst_delay_ms внутри одного attack_id, _burst_shots_fired считает
+        # уже сделанные. pellet_count>1 (Shotgun) - веер снарядов за один
+        # выстрел, разом (см. _spawn_projectile).
         if self.player.attacking:
             weapon = self.player.current_weapon
             if weapon.fires_projectile:
                 if self.player.attack_id != self._last_fired_attack_id:
                     self._last_fired_attack_id = self.player.attack_id
-                    self._spawn_projectile(weapon)
+                    self._burst_shots_fired = 0
+                if self._burst_shots_fired < weapon.burst_count:
+                    elapsed = pygame.time.get_ticks() - self.player.attack_timer
+                    shot_due_at = self._burst_shots_fired * weapon.burst_delay_ms
+                    if elapsed >= shot_due_at:
+                        self._spawn_projectile(weapon)
+                        self._burst_shots_fired += 1
             else:
                 hits, kills = self.world.enemy_manager.apply_player_attack(
                     self.player.attack_id,
@@ -511,18 +532,27 @@ class Game:
         )
 
     def _spawn_projectile(self, weapon) -> None:
-        """Создать и заспавнить снаряд в направлении прицела игрока (360°)."""
-        dx, dy = self.player.aim_dx, self.player.aim_dy
+        """Заспавнить один залп снарядов в направлении прицела игрока (360°).
+
+        pellet_count==1 (Rifle/SMG) - один снаряд точно по прицелу.
+        pellet_count>1 (Shotgun) - веер снарядов вокруг прицела, см.
+        weapons.pellet_directions()."""
         cx = self.player.x + self.player.width / 2
         cy = self.player.y + self.player.height / 2
-        projectile = Projectile(
-            cx, cy, dx, dy,
-            speed=weapon.projectile_speed,
-            damage=weapon.damage + self.player.damage_bonus,
-            max_range=weapon.projectile_max_range,
-            color=weapon.color,
+
+        directions = pellet_directions(
+            self.player.aim_dx, self.player.aim_dy,
+            weapon.pellet_count, weapon.spread_angle_deg,
         )
-        self.world.projectile_manager.spawn(projectile)
+        for dx, dy in directions:
+            projectile = Projectile(
+                cx, cy, dx, dy,
+                speed=weapon.projectile_speed,
+                damage=weapon.damage + self.player.damage_bonus,
+                max_range=weapon.projectile_max_range,
+                color=weapon.color,
+            )
+            self.world.projectile_manager.spawn(projectile)
 
     # --- Отрисовка ---------------------------------------------------------
 
@@ -560,7 +590,7 @@ class Game:
             else:
                 debug(
                     "WASD | Mouse - Aim | Space/LMB - Attack | 1..8 | Tab - Cycle | "
-                    "R - Reload | I - Inventory | F1 - Debug | F5 - Quicksave | "
+                    "R/RMB - Reload | I - Inventory | F1 - Debug | F5 - Quicksave | "
                     "F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
@@ -601,7 +631,7 @@ class Game:
             f"FPS: {int(self.clock.get_fps())}",
             "Controls: WASD - Move, Mouse - Aim (360), Shift - Sprint, "
             "Space/LMB - Attack, 1..8 - Weapon slot, Tab - Cycle, "
-            "R - Reload, I - Inventory",
+            "R/RMB - Reload, I - Inventory",
             "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]
         y = 10
@@ -720,6 +750,7 @@ class Game:
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
         self._last_fired_attack_id = -1
+        self._burst_shots_fired = 0
         self.state = GameState.PLAYING
         print("   ✅ Игра загружена! (F9)")
 

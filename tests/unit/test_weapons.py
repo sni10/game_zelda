@@ -15,7 +15,9 @@ import pygame
 
 from src.entities.weapons import (
     MeleeWeapon, PolearmWeapon, RangedWeapon, AoeWeapon,
+    BurstRifle, ShotgunWeapon,
     DIRECTION_VECTORS, _rect_in_direction, _rect_in_vector_direction,
+    pellet_directions,
     WEAPON_CATALOG, create_weapon, starting_slot_assignment,
 )
 
@@ -181,6 +183,97 @@ class TestRangedWeapon:
         assert PolearmWeapon.ammo_type is None
         assert AoeWeapon.ammo_type is None
 
+    def test_unlimited_range(self):
+        """Скорострельное оружие (Rifle) - дистанцию не ограничиваем: пуля
+        летит, пока не упрётся в стену/границу мира, не по таймеру дальности."""
+        assert RangedWeapon.projectile_max_range == float('inf')
+
+
+class TestBurstRifle:
+    """SMG: одно нажатие даёт очередь из 3 пуль (burst_count), но списывает
+    ровно 1 патрон из магазина - как и одиночный Rifle (см. TestAmmo в
+    test_combat_loop.py / PlayerCombat.try_attack). Мгновенных attack_rects
+    нет (как и у Rifle - урон наносит Projectile, не rect)."""
+
+    def test_no_instant_attack_rects(self, player_rect):
+        smg = BurstRifle()
+        assert smg.get_attack_rects(player_rect, *DIRECTION_VECTORS['right']) == []
+
+    def test_burst_params(self):
+        assert BurstRifle.fires_projectile is True
+        assert BurstRifle.burst_count == 3
+        assert BurstRifle.burst_delay_ms > 0
+
+    def test_unlimited_range(self):
+        """Скорострельное оружие - дистанция не ограничена (см. RangedWeapon)."""
+        assert BurstRifle.projectile_max_range == float('inf')
+
+    def test_duration_covers_full_burst(self):
+        """attacking должен держаться дольше, чем время до последнего
+        выстрела очереди - иначе последний выстрел никогда не заспавнится
+        (см. Game.update() burst-таймер в game.py)."""
+        last_shot_at = (BurstRifle.burst_count - 1) * BurstRifle.burst_delay_ms
+        assert BurstRifle.duration_ms > last_shot_at
+
+
+class TestShotgunWeapon:
+    """Дробовик: 5 пуль веером, мгновенных attack_rects тоже нет."""
+
+    def test_no_instant_attack_rects(self, player_rect):
+        shotgun = ShotgunWeapon()
+        assert shotgun.get_attack_rects(player_rect, *DIRECTION_VECTORS['right']) == []
+
+    def test_pellet_params(self):
+        assert ShotgunWeapon.fires_projectile is True
+        assert ShotgunWeapon.pellet_count == 5
+        assert ShotgunWeapon.spread_angle_deg > 0
+        assert ShotgunWeapon.burst_count == 1  # весь веер - один выстрел, не очередь
+
+    def test_limited_but_extended_range(self):
+        """Дробовик - единственное оружие с ограничением дальности (не
+        скорострельное), но оно увеличено на 10-15% относительно старого
+        дефолта Rifle (420px)."""
+        assert 420 * 1.10 <= ShotgunWeapon.projectile_max_range <= 420 * 1.15
+
+
+class TestPelletDirections:
+    """weapons.pellet_directions - веер снарядов для Shotgun (pure function,
+    без зависимости от Game/Player - см. Game._spawn_projectile)."""
+
+    def test_single_pellet_returns_aim_direction_unchanged(self):
+        dirs = pellet_directions(1.0, 0.0, pellet_count=1, spread_angle_deg=30)
+        assert dirs == [(1.0, 0.0)]
+
+    def test_returns_pellet_count_directions(self):
+        dirs = pellet_directions(1.0, 0.0, pellet_count=5, spread_angle_deg=30)
+        assert len(dirs) == 5
+
+    def test_middle_pellet_is_exact_aim_direction(self):
+        """Нечётный pellet_count (5) - средняя пулька точно по центральной
+        оси прицела, как просил пользователь ("по центральной оси")."""
+        dirs = pellet_directions(0.0, 1.0, pellet_count=5, spread_angle_deg=30)
+        middle = dirs[2]
+        assert middle[0] == pytest.approx(0.0, abs=1e-9)
+        assert middle[1] == pytest.approx(1.0, abs=1e-9)
+
+    def test_outer_pellets_are_symmetric_around_aim(self):
+        dirs = pellet_directions(0.0, 1.0, pellet_count=5, spread_angle_deg=30)
+        first, last = dirs[0], dirs[-1]
+        # Симметричны относительно оси прицела (dy одинаковый, dx зеркальный)
+        assert first[0] == pytest.approx(-last[0])
+        assert first[1] == pytest.approx(last[1])
+
+    def test_all_directions_are_unit_vectors(self):
+        dirs = pellet_directions(1.0, 0.0, pellet_count=5, spread_angle_deg=45)
+        for dx, dy in dirs:
+            assert math.hypot(dx, dy) == pytest.approx(1.0)
+
+    def test_zero_spread_collapses_all_pellets_to_aim(self):
+        dirs = pellet_directions(1.0, 0.0, pellet_count=5, spread_angle_deg=0)
+        for dx, dy in dirs:
+            assert dx == pytest.approx(1.0)
+            assert dy == pytest.approx(0.0, abs=1e-9)
+
 
 class TestAoeWeapon:
     """Бомба: одна большая зона 3x3 клетки."""
@@ -230,7 +323,9 @@ class TestWeaponCatalog:
     """WEAPON_CATALOG - единственный источник правды для id/создания оружия."""
 
     def test_catalog_ids(self):
-        assert set(WEAPON_CATALOG) == {"sword", "spear", "rifle", "bomb"}
+        assert set(WEAPON_CATALOG) == {
+            "sword", "spear", "rifle", "smg", "shotgun", "bomb",
+        }
 
     def test_create_weapon_by_id(self):
         w = create_weapon("rifle")
