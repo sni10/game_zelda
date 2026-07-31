@@ -454,9 +454,11 @@ class Game:
             return
 
         keys = pygame.key.get_pressed()
-        self.player.handle_input(keys)
-        # Прицел независим от WASD - следует за мышью каждый кадр (twin-stick).
+        # Прицел (мышь) - до handle_input: W/A/S/D двигают игрока относительно
+        # текущего направления взгляда (см. Player.handle_input), поэтому aim
+        # должен быть уже актуален на этот кадр, а не с прошлого.
         self.player.update_aim(self.world.camera_x, self.world.camera_y)
+        self.player.handle_input(keys)
         self.player.update(dt, self.world, self.game_stats)
 
         # Враги патрулируют свои зоны + авто-респавн при удалении игрока

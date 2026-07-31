@@ -47,48 +47,58 @@ class TestPlayer:
         assert self.player.attacking == False
         assert isinstance(self.player.rect, pygame.Rect)
         
-    def test_player_movement_input(self):
-        """Test player handles movement input correctly"""
-        # Mock keys pressed
-        keys = {
-            pygame.K_LEFT: False,
-            pygame.K_RIGHT: True,
-            pygame.K_UP: False,
-            pygame.K_DOWN: False,
-            pygame.K_a: False,
-            pygame.K_d: False,
-            pygame.K_w: False,
-            pygame.K_s: False,
-            pygame.K_SPACE: False
-        }
-        
+    def test_player_movement_forward_follows_aim(self):
+        """W двигает игрока вперёд - вдоль текущего направления прицела,
+        не по фиксированной мировой оси (танковое управление)."""
+        self.player.aim_dx, self.player.aim_dy = 1.0, 0.0  # смотрим вправо
+        keys = self._press(pygame.K_w)
         self.player.handle_input(keys)
+        assert self.player.direction_x == pytest.approx(1.0)
+        assert self.player.direction_y == pytest.approx(0.0)
 
-        assert self.player.direction_x == 1
-        assert self.player.direction_y == 0
-        # facing_direction больше не выводится из WASD - см. update_aim()
-        # (мышь, "как турель") - движение и прицел независимы.
-        
-    def test_player_diagonal_movement(self):
-        """Test player diagonal movement normalization"""
-        keys = {
-            pygame.K_LEFT: False,
-            pygame.K_RIGHT: True,
-            pygame.K_UP: True,
-            pygame.K_DOWN: False,
-            pygame.K_a: False,
-            pygame.K_d: False,
-            pygame.K_w: False,
-            pygame.K_s: False,
-            pygame.K_SPACE: False
-        }
-        
+    def test_player_movement_backward_is_opposite_of_aim(self):
+        """S - пятится назад, противоположно направлению прицела."""
+        self.player.aim_dx, self.player.aim_dy = 1.0, 0.0
+        keys = self._press(pygame.K_s)
         self.player.handle_input(keys)
-        
-        # Check diagonal movement is normalized
-        assert abs(self.player.direction_x - 0.707) < 0.01
-        assert abs(self.player.direction_y - (-0.707)) < 0.01
-        
+        assert self.player.direction_x == pytest.approx(-1.0)
+        assert self.player.direction_y == pytest.approx(0.0)
+
+    def test_player_strafe_right_is_perpendicular_to_aim(self):
+        """D - вбок вправо относительно взгляда: смотрим вправо (1,0) ->
+        "вправо от игрока" на экране (y вниз) - это (0,1), т.е. вниз."""
+        self.player.aim_dx, self.player.aim_dy = 1.0, 0.0
+        keys = self._press(pygame.K_d)
+        self.player.handle_input(keys)
+        assert self.player.direction_x == pytest.approx(0.0)
+        assert self.player.direction_y == pytest.approx(1.0)
+
+    def test_player_strafe_left_is_opposite_of_strafe_right(self):
+        """A - вбок влево, противоположно D."""
+        self.player.aim_dx, self.player.aim_dy = 1.0, 0.0
+        keys = self._press(pygame.K_a)
+        self.player.handle_input(keys)
+        assert self.player.direction_x == pytest.approx(0.0)
+        assert self.player.direction_y == pytest.approx(-1.0)
+
+    def test_player_diagonal_movement(self):
+        """W+D одновременно - нормализованная диагональ (вперёд+вбок),
+        как раньше для мировых осей, но теперь относительно прицела."""
+        self.player.aim_dx, self.player.aim_dy = 1.0, 0.0
+        keys = self._press(pygame.K_w, pygame.K_d)
+        self.player.handle_input(keys)
+        assert self.player.direction_x == pytest.approx(0.707, abs=0.01)
+        assert self.player.direction_y == pytest.approx(0.707, abs=0.01)
+
+    def test_arrow_keys_do_not_move_player(self):
+        """Стрелки больше не двигают игрока - только WASD (относительно
+        прицела)."""
+        keys = self._press(pygame.K_LEFT, pygame.K_RIGHT,
+                           pygame.K_UP, pygame.K_DOWN)
+        self.player.handle_input(keys)
+        assert self.player.direction_x == 0
+        assert self.player.direction_y == 0
+
     def test_player_attack_input(self):
         """Test player attack input"""
         keys = {
@@ -358,19 +368,15 @@ class TestPlayer:
         self._aim_at_screen_offset(0, 0)  # курсор точно на игроке
         assert (self.player.aim_dx, self.player.aim_dy) == (prev_dx, prev_dy)
 
-    def test_movement_independent_of_aim(self):
-        """Twin-stick: WASD не должен трогать aim_dx/aim_dy вообще."""
+    def test_movement_does_not_change_aim(self):
+        """Танковое управление: WASD зависит от прицела (aim_dx/aim_dy), но
+        не наоборот - handle_input не должен трогать aim_dx/aim_dy вообще,
+        им управляет только update_aim() (мышь)."""
         self._aim_at_screen_offset(100, 0)  # целимся вправо
-        keys = {
-            pygame.K_LEFT: True, pygame.K_RIGHT: False,
-            pygame.K_UP: False, pygame.K_DOWN: False,
-            pygame.K_a: False, pygame.K_d: False,
-            pygame.K_w: False, pygame.K_s: False,
-            pygame.K_SPACE: False,
-        }
-        self.player.handle_input(keys)  # двигаемся влево
-        assert self.player.direction_x == -1
-        # Прицел не изменился, несмотря на движение в другую сторону
+        keys = self._press(pygame.K_w)
+        self.player.handle_input(keys)  # двигаемся вперёд (по прицелу)
+        assert self.player.direction_x == pytest.approx(1.0)
+        # Прицел не изменился от самого факта движения
         assert self.player.aim_dx == pytest.approx(1.0, abs=0.01)
 
     def test_player_health_minimum_zero(self):
@@ -535,23 +541,27 @@ class TestPlayer:
 
     def test_sprint_speed_multiplier_applied(self):
         """При зажатом Shift игрок реально движется быстрее."""
+        # Целимся вверх, чтобы D (strafe вправо) двигал игрока на восток
+        # (+x) - подальше от границ мира 1000x1000, иначе clamp у стенки
+        # маскирует разницу в скорости между обычным и sprint-движением.
+        self.player.aim_dx, self.player.aim_dy = 0.0, -1.0
         # Без спринта - проходим X пикселей за 1 секунду
-        self.player.x = 100
-        self.player.y = 100
+        self.player.x = 500
+        self.player.y = 500
         self.player.handle_input(self._press(pygame.K_d))  # вправо
         self.player.update(dt=1.0, world=self.mock_world)
         normal_x = self.player.x
 
         # Сброс позиции и тот же ввод + Shift
-        self.player.x = 100
-        self.player.y = 100
+        self.player.x = 500
+        self.player.y = 500
         self.player.handle_input(self._press(pygame.K_d, pygame.K_LSHIFT))
         self.player.update(dt=1.0, world=self.mock_world)
         sprint_x = self.player.x
 
         # Должно быть ровно в sprint_multiplier раз дальше
-        normal_dist = normal_x - 100
-        sprint_dist = sprint_x - 100
+        normal_dist = normal_x - 500
+        sprint_dist = sprint_x - 500
         ratio = sprint_dist / normal_dist
         assert abs(ratio - self.player.sprint_multiplier) < 0.001, (
             f"Sprint ratio {ratio} != multiplier {self.player.sprint_multiplier}"
