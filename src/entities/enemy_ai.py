@@ -202,14 +202,26 @@ class ChaseBehavior(AIBehavior):
         new_y = enemy.y + ny * speed * dt
 
         import pygame
-        candidate = pygame.Rect(int(new_x), int(new_y),
-                                enemy.rect.width, enemy.rect.height)
-        if world is not None and world.check_collision(candidate):
-            return  # Упёрлись — стоим
 
-        enemy.x = new_x
-        enemy.y = new_y
-        enemy.rect.x = int(new_x)
-        enemy.rect.y = int(new_y)
+        # Разрешаем коллизию по осям НЕЗАВИСИМО (скольжение вдоль стены) -
+        # иначе враг замирает, стоит взгляду отклониться от перпендикуляра
+        # к препятствию хоть на долю градуса, вместо обхода вдоль него.
+        if world is not None:
+            candidate_x = pygame.Rect(int(new_x), int(enemy.y),
+                                      enemy.rect.width, enemy.rect.height)
+            if not world.check_collision(candidate_x):
+                enemy.x = new_x
+                enemy.rect.x = int(new_x)
+
+            candidate_y = pygame.Rect(int(enemy.x), int(new_y),
+                                      enemy.rect.width, enemy.rect.height)
+            if not world.check_collision(candidate_y):
+                enemy.y = new_y
+                enemy.rect.y = int(new_y)
+        else:
+            enemy.x = new_x
+            enemy.y = new_y
+            enemy.rect.x = int(new_x)
+            enemy.rect.y = int(new_y)
 
 
