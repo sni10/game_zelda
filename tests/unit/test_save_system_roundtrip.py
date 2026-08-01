@@ -77,10 +77,9 @@ def test_player_roundtrip_full(tmp_save_system):
     p.stats.coins = 99
     p.stats.damage_bonus = 2
     p.stats.iframe_timer = 0.42
-    # Открываем 3-й слот и крутим его до "rifle" (sword -> spear -> rifle)
+    # Открываем 3-й слот и назначаем в него rifle
     p.unlock_slot()
-    p.cycle_slot_weapon(2)
-    p.cycle_slot_weapon(2)
+    p.set_slot_weapon(2, "rifle")
     p.current_weapon_index = 2  # rifle
     # Патроны (v0.4.0b): нестандартные значения, чтобы отличить от дефолта
     p.magazine["bullets"] = 4
