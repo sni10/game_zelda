@@ -60,27 +60,26 @@ class PlayerCombat:
             return True
         return False
 
-    def cycle_slot_weapon(self, index: int) -> bool:
-        """Сменить тип оружия в слоте index на следующий по кругу из каталога.
-
-        Свободное назначение: любой слот может держать любое оружие из
-        WEAPON_CATALOG, без привязки к melee/ranged. Возвращает True если
-        смена произошла."""
+    def set_slot_weapon(self, index: int, weapon_id: str) -> bool:
+        """Назначить конкретный тип оружия (по weapon_id из WEAPON_CATALOG)
+        в уже разлоченный слот index - drag-and-drop оружия из каталога в
+        InventoryScreen. Свободное назначение: любой слот может держать
+        любое оружие, без привязки к melee/ranged. Возвращает True если
+        назначение произошло."""
         if self.attacking:
             return False
         if not (0 <= index < len(self.weapons)):
             return False
-        catalog_ids = list(WEAPON_CATALOG)
-        current_id = self.weapons[index].weapon_id
-        next_index = (catalog_ids.index(current_id) + 1) % len(catalog_ids)
-        self.weapons[index] = create_weapon(catalog_ids[next_index])
+        if weapon_id not in WEAPON_CATALOG:
+            return False
+        self.weapons[index] = create_weapon(weapon_id)
         return True
 
     def move_weapon(self, from_index: int, to_index: int) -> bool:
         """Поменять местами оружие в двух слотах (своп, не сдвиг). Для
         drag-and-drop в InventoryScreen. current_weapon_index не трогаем -
         активным остаётся то, что физически лежит в этом слоте после свопа
-        (тот же принцип, что уже работает для cycle_slot_weapon)."""
+        (тот же принцип, что уже работает для set_slot_weapon)."""
         if self.attacking:
             return False
         n = len(self.weapons)
