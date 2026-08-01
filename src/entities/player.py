@@ -180,8 +180,8 @@ class Player:
     def switch_weapon(self, index: int) -> bool:
         return self._combat.switch_weapon(index)
 
-    def cycle_slot_weapon(self, index: int) -> bool:
-        return self._combat.cycle_slot_weapon(index)
+    def set_slot_weapon(self, index: int, weapon_id: str) -> bool:
+        return self._combat.set_slot_weapon(index, weapon_id)
 
     def move_weapon(self, from_index: int, to_index: int) -> bool:
         return self._combat.move_weapon(from_index, to_index)
@@ -357,18 +357,30 @@ class Player:
             
             new_x = self.x + self.direction_x * effective_speed * dt
             new_y = self.y + self.direction_y * effective_speed * dt
-            
+
             new_x = max(0, min(new_x, world.width - self.width))
             new_y = max(0, min(new_y, world.height - self.height))
-            
-            temp_rect = pygame.Rect(int(new_x), int(new_y), self.width, self.height)
-            
-            if not world.check_collision(temp_rect):
-                self.x = new_x
-                self.y = new_y
+
+            # Разрешаем коллизию по осям НЕЗАВИСИМО - иначе движение по
+            # диагонали блокируется целиком даже если только одна из осей
+            # реально упирается в стену, и юнит "залипает" на препятствии
+            # при любом отклонении взгляда от перпендикуляра к стене.
+            moved = False
+            if new_x != self.x:
+                candidate_x = pygame.Rect(int(new_x), int(self.y), self.width, self.height)
+                if not world.check_collision(candidate_x):
+                    self.x = new_x
+                    moved = True
+            if new_y != self.y:
+                candidate_y = pygame.Rect(int(self.x), int(new_y), self.width, self.height)
+                if not world.check_collision(candidate_y):
+                    self.y = new_y
+                    moved = True
+
+            if moved:
                 self.rect.x = int(self.x)
                 self.rect.y = int(self.y)
-                
+
                 new_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
                 if new_tile and new_tile.damages_player:
                     current_time = pygame.time.get_ticks()

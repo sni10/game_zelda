@@ -146,9 +146,9 @@ class Game:
         )
         self.hud = HUD()
 
-        print("Игра запущена. WASD/стрелки - движение, мышь - прицел (360°), "
-              "Space/ЛКМ - атака, "
-              "1..8 - слот оружия, Tab - сменить оружие в слоте, R - перезарядка, "
+        print("Игра запущена. WASD - движение (относительно прицела), "
+              "мышь - прицел (360°), Space/ЛКМ - атака, "
+              "1..8 - слот оружия, R/ПКМ - перезарядка, "
               "I - инвентарь, "
               "F1 - debug, F5 - quicksave, F6 - save menu, "
               "F9 - quickload, ESC - меню")
@@ -233,17 +233,6 @@ class Game:
                         f"(reach={w.reach}, dmg={w.damage})",
                         "IMPORTANT",
                     )
-        elif event.key == pygame.K_TAB:
-            # Сменить тип оружия в текущем выбранном слоте по кругу
-            # (свободное назначение - любое оружие из каталога в любой слот).
-            if self.player:
-                idx = self.player.current_weapon_index
-                if self.player.cycle_slot_weapon(idx):
-                    w = self.player.current_weapon
-                    self.log(
-                        f"🔄 [{idx + 1}] Оружие сменено на: {w.name}",
-                        "IMPORTANT",
-                    )
         elif event.key == pygame.K_r:
             self._reload_current_weapon()
         elif event.key == pygame.K_i:
@@ -283,6 +272,13 @@ class Game:
                 self.log(
                     f"🎒 Слоты {action['from_index'] + 1} и "
                     f"{action['to_index'] + 1} поменяны местами",
+                    "IMPORTANT",
+                )
+        elif atype == "set_slot_weapon":
+            if self.player.set_slot_weapon(action["index"], action["weapon_id"]):
+                w = self.player.weapons[action["index"]]
+                self.log(
+                    f"🎒 [{action['index'] + 1}] Оружие: {w.name}",
                     "IMPORTANT",
                 )
 
@@ -591,9 +587,9 @@ class Game:
                 self._draw_debug_info()
             else:
                 debug(
-                    "WASD | Mouse - Aim | Space/LMB - Attack | 1..8 | Tab - Cycle | "
-                    "R/RMB - Reload | I - Inventory | F1 - Debug | F5 - Quicksave | "
-                    "F6 - Save menu | F9 - Quickload | ESC - Menu",
+                    "WASD - Move (relative to aim) | Mouse - Aim | Space/LMB - Attack | "
+                    "1..8 | R/RMB - Reload | I - Inventory | F1 - Debug | "
+                    "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
                     y=get_config('HEIGHT') - 30,
                 )
 
@@ -631,8 +627,8 @@ class Game:
             f"Pickups: {self.pickup_manager.count() if self.pickup_manager else 0}",
             f"Kills: {self.game_stats.enemies_killed if self.game_stats else 0}",
             f"FPS: {int(self.clock.get_fps())}",
-            "Controls: WASD - Move, Mouse - Aim (360), Shift - Sprint, "
-            "Space/LMB - Attack, 1..8 - Weapon slot, Tab - Cycle, "
+            "Controls: WASD - Move (relative to aim), Mouse - Aim (360), "
+            "Shift - Sprint, Space/LMB - Attack, 1..8 - Weapon slot, "
             "R/RMB - Reload, I - Inventory",
             "F1 - Debug, F5 - Quicksave, F6 - Save menu, F9 - Quickload, ESC - Menu",
         ]

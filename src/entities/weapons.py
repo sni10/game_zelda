@@ -281,8 +281,8 @@ class AoeWeapon(Weapon):
 
 
 # Каталог всех доступных типов оружия по стабильному weapon_id.
-# Порядок словаря = порядок циклической смены оружия в слоте (см.
-# PlayerCombat.cycle_slot_weapon). Единственный источник правды и для
+# Порядок словаря = порядок отображения в InventoryScreen (см.
+# PlayerCombat.set_slot_weapon). Единственный источник правды и для
 # создания оружия по id (сохранения), и для стартовой раскладки.
 WEAPON_CATALOG: Dict[str, Type[Weapon]] = {
     "sword": MeleeWeapon,

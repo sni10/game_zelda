@@ -346,7 +346,7 @@ class TestWeaponCatalog:
 # --- Гибкие слоты (2 -> 8 по уровню, свободное назначение) ------------------
 
 class TestFlexibleWeaponSlots:
-    """PlayerCombat.unlock_slot / cycle_slot_weapon (см. player_combat.py)."""
+    """PlayerCombat.unlock_slot / set_slot_weapon (см. player_combat.py)."""
 
     @pytest.fixture
     def player(self):
@@ -367,23 +367,26 @@ class TestFlexibleWeaponSlots:
         assert len(player.weapons) == 8
         assert player.unlock_slot() is False
 
-    def test_cycle_slot_weapon_advances_catalog_order(self, player):
+    def test_set_slot_weapon_assigns_given_weapon(self, player):
         assert player.weapons[0].weapon_id == "sword"
-        assert player.cycle_slot_weapon(0) is True
-        assert player.weapons[0].weapon_id == "spear"
+        assert player.set_slot_weapon(0, "rifle") is True
+        assert player.weapons[0].weapon_id == "rifle"
 
-    def test_cycle_wraps_around_full_catalog(self, player):
-        # sword -> spear -> rifle -> bomb -> sword (4 записи в каталоге)
-        for _ in range(len(WEAPON_CATALOG)):
-            player.cycle_slot_weapon(0)
-        assert player.weapons[0].weapon_id == "sword"
+    def test_set_slot_weapon_any_catalog_id_works(self, player):
+        for weapon_id in WEAPON_CATALOG:
+            assert player.set_slot_weapon(0, weapon_id) is True
+            assert player.weapons[0].weapon_id == weapon_id
 
-    def test_cycle_blocked_during_attack(self, player):
+    def test_set_slot_weapon_unknown_id_rejected(self, player):
+        assert player.set_slot_weapon(0, "does-not-exist") is False
+        assert player.weapons[0].weapon_id == "sword"  # не изменилось
+
+    def test_set_slot_weapon_blocked_during_attack(self, player):
         player.attacking = True
-        assert player.cycle_slot_weapon(0) is False
+        assert player.set_slot_weapon(0, "rifle") is False
 
-    def test_cycle_out_of_range_rejected(self, player):
-        assert player.cycle_slot_weapon(5) is False  # слот ещё не разлочен
+    def test_set_slot_weapon_out_of_range_rejected(self, player):
+        assert player.set_slot_weapon(5, "rifle") is False  # слот ещё не разлочен
 
     def test_switch_to_locked_slot_rejected(self, player):
         # Только 2 слота есть - индекс 2 ещё не существует
