@@ -16,6 +16,7 @@ import json
 import os
 from datetime import datetime
 
+from src.entities.armor import ARMOR_CATALOG, create_armor
 from src.entities.weapons import WEAPON_CATALOG, create_weapon
 from src.entities.player_stats import unlocked_weapon_slots
 
@@ -27,14 +28,15 @@ class SaveValidationError(ValueError):
 class SaveSystem:
     """Система сохранения и загрузки игрового прогресса."""
 
-    SAVE_VERSION = "1.3"
+    SAVE_VERSION = "1.4"
 
     # Версии, с которыми мы умеем работать на загрузке.
     # 1.0 — старый формат без enemies/pickups/game_stats/weapon_index.
     # 1.1 — добавлены enemies/pickups/game_stats/current_weapon_index.
     # 1.2 — добавлены гибкие слоты оружия (weapon_slots).
     # 1.3 — добавлены патроны (ammo: magazine/reserve).
-    SUPPORTED_VERSIONS = {"1.0", "1.1", "1.2", "1.3"}
+    # 1.4 — добавлена броня (armor: current_shield по слотам, issue #63).
+    SUPPORTED_VERSIONS = {"1.0", "1.1", "1.2", "1.3", "1.4"}
 
     # Обязательные верхнеуровневые ключи в save_data
     _REQUIRED_TOP_KEYS = ("version", "player")
@@ -232,11 +234,23 @@ class SaveSystem:
         ammo = player.get("ammo")
         if ammo is not None and not isinstance(ammo, dict):
             raise SaveValidationError("player['ammo'] должно быть объектом")
+        armor = player.get("armor")
+        if armor is not None and not isinstance(armor, dict):
+            raise SaveValidationError("player['armor'] должно быть объектом")
 
     # --- Сериализация ------------------------------------------------------
 
     def _serialize_player(self, player):
         """Сериализация данных игрока."""
+        equipment = getattr(player, "equipment", None)
+        armor_data = {}
+        if equipment is not None:
+            for slot_name, armor in equipment.slots.items():
+                if armor is not None:
+                    armor_data[slot_name] = {
+                        "armor_id": armor.armor_id,
+                        "current_shield": int(armor.current_shield),
+                    }
         return {
             "x": int(player.x),
             "y": int(player.y),
@@ -254,6 +268,7 @@ class SaveSystem:
                 "magazine": dict(getattr(player, "magazine", {})),
                 "reserve": dict(getattr(player, "reserve", {})),
             },
+            "armor": armor_data,
         }
 
     def _serialize_world(self, world):
@@ -313,6 +328,28 @@ class SaveSystem:
                 player.magazine.update(ammo_data.get("magazine", {}))
                 player.reserve.clear()
                 player.reserve.update(ammo_data.get("reserve", {}))
+
+            # Броня — если в сейве нет ключа (версия < 1.4), оставляем
+            # дефолтный полный щит стартового комплекта из PlayerStats.__init__
+            # как есть (armor_id сейчас всегда один и тот же стартовый набор,
+            # но восстанавливаем через create_armor на случай будущей смены
+            # экипировки между сохранениями).
+            armor_data = player_data.get("armor")
+            if armor_data:
+                equipment = player.stats.equipment
+                for slot_name, info in armor_data.items():
+                    armor_id = info.get("armor_id")
+                    armor = equipment.slots.get(slot_name)
+                    if armor_id in ARMOR_CATALOG and (
+                        armor is None or armor.armor_id != armor_id
+                    ):
+                        armor = create_armor(armor_id)
+                        equipment.equip(armor)
+                    if armor is not None:
+                        armor.current_shield = max(0, min(
+                            int(info.get("current_shield", armor.max_shield)),
+                            armor.max_shield,
+                        ))
 
             # Активное оружие — выставляем напрямую, без switch_weapon
             # (тот блокирует переключение во время attacking и при том же
