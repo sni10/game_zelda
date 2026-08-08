@@ -205,6 +205,28 @@ def test_catalog_rects_do_not_overlap(screen_ui):
         assert not rects[i].colliderect(rects[i + 1]) or rects[i].right <= rects[i + 1].left
 
 
+# --- Броня (issue #63) -------------------------------------------------------
+
+def test_armor_bar_rects_one_per_slot(screen_ui):
+    from src.entities.armor import SLOT_NAMES
+    rects = screen_ui._armor_bar_rects()
+    assert len(rects) == len(SLOT_NAMES)
+
+
+def test_armor_bar_rects_do_not_overlap(screen_ui):
+    rects = screen_ui._armor_bar_rects()
+    for i in range(len(rects) - 1):
+        assert rects[i].right <= rects[i + 1].left
+
+
+def test_draw_reflects_depleted_armor_shield(screen_ui, player):
+    """После пробития щита brony draw() не крашится и current_shield=0."""
+    screen = pygame.display.get_surface()
+    player.equipment.absorb_damage(player.equipment.total_max_shield)
+    assert player.equipment.total_shield == 0
+    screen_ui.draw(screen, player)  # не должно крашнуться
+
+
 # --- draw() smoke ------------------------------------------------------------
 
 def test_draw_does_not_crash(screen_ui, player):
