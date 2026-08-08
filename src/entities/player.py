@@ -81,8 +81,23 @@ class Player:
     def take_damage(self, damage, game_stats=None, ignore_iframes=False):
         return self._stats.take_damage(damage, game_stats, ignore_iframes=ignore_iframes)
 
+    def take_damage_from_enemy(self, damage, game_stats=None):
+        return self._stats.take_damage_from_enemy(damage, game_stats)
+
     def heal(self, amount):
         self._stats.heal(amount)
+
+    @property
+    def shield(self):
+        return self._stats.shield
+
+    @property
+    def max_shield(self):
+        return self._stats.max_shield
+
+    @property
+    def equipment(self):
+        return self._stats.equipment
 
     def get_health_percentage(self):
         return self._stats.get_health_percentage()
@@ -353,7 +368,8 @@ class Player:
             current_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
             speed_modifier = current_tile.speed_modifier if current_tile else 1.0
             sprint = self.sprint_multiplier if self.is_sprinting else 1.0
-            effective_speed = self.speed * speed_modifier * sprint
+            armor_mod = 1.0 + self._stats.equipment.total_speed_mod
+            effective_speed = self.speed * speed_modifier * sprint * armor_mod
             
             new_x = self.x + self.direction_x * effective_speed * dt
             new_y = self.y + self.direction_y * effective_speed * dt

@@ -124,7 +124,8 @@ class ConfigLoader:
                                           ('pickups', 'PICKUPS'),
                                           ('drops', 'DROPS'),
                                           ('progression', 'PROGRESSION'),
-                                          ('ammo', 'AMMO')]:
+                                          ('ammo', 'AMMO'),
+                                          ('armor', 'ARMOR')]:
                 if not parser.has_section(section_name):
                     continue
                 for key, value in parser.items(section_name):

@@ -296,7 +296,7 @@ class EnemyManager:
             # Враг вплотную (touching_player) или прямо пересекается
             if enemy.touching_player or enemy.rect.colliderect(player.rect):
                 dmg = enemy.stats.damage
-                hit = player.take_damage(dmg)
+                hit = player.take_damage_from_enemy(dmg)
                 if hit:
                     # Knockback игрока от врага
                     player.apply_knockback(enemy.x, enemy.y)

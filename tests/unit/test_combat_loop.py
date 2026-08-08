@@ -93,7 +93,7 @@ class TestEnemyAttackCooldown:
         player.y = 100.0
         player.rect = pygame.Rect(100, 100, 32, 32)
         player.is_invulnerable = False
-        player.take_damage.return_value = True
+        player.take_damage_from_enemy.return_value = True
 
         # Первый удар — проходит
         dmg = enemy_manager.apply_contact_damage(player)
@@ -102,12 +102,12 @@ class TestEnemyAttackCooldown:
 
         # Сбрасываем invulnerable для чистоты теста
         player.is_invulnerable = False
-        player.take_damage.reset_mock()
+        player.take_damage_from_enemy.reset_mock()
 
         # Второй удар сразу — блокируется cooldown врага
         dmg2 = enemy_manager.apply_contact_damage(player)
         assert dmg2 == 0
-        player.take_damage.assert_not_called()
+        player.take_damage_from_enemy.assert_not_called()
 
     def test_enemy_retreats_after_hit(self, enemy_manager):
         """Враг отскакивает назад после удара."""
@@ -119,7 +119,7 @@ class TestEnemyAttackCooldown:
         player.y = 100.0
         player.rect = pygame.Rect(100, 100, 32, 32)
         player.is_invulnerable = False
-        player.take_damage.return_value = True
+        player.take_damage_from_enemy.return_value = True
 
         enemy_manager.apply_contact_damage(player)
         # Враг получил knockback (retreat)
@@ -138,11 +138,11 @@ class TestContactDamageWithIframes:
         player.y = 100.0
         player.rect = pygame.Rect(100, 100, 32, 32)
         player.is_invulnerable = False
-        player.take_damage.return_value = True
+        player.take_damage_from_enemy.return_value = True
 
         dmg = enemy_manager.apply_contact_damage(player)
         assert dmg == 5
-        player.take_damage.assert_called_once_with(5)
+        player.take_damage_from_enemy.assert_called_once_with(5)
 
     def test_no_damage_when_invulnerable(self, enemy_manager):
         """Неуязвимый игрок не получает контактный урон."""
@@ -155,7 +155,7 @@ class TestContactDamageWithIframes:
 
         dmg = enemy_manager.apply_contact_damage(player)
         assert dmg == 0
-        player.take_damage.assert_not_called()
+        player.take_damage_from_enemy.assert_not_called()
 
 
 class TestDropLoot:

@@ -50,10 +50,22 @@ def _mouse_up(pos, button=1):
     return pygame.event.Event(pygame.MOUSEBUTTONUP, {"pos": pos, "button": button})
 
 
-# --- Esc -------------------------------------------------------------------
+# --- Esc/I/Tab ---------------------------------------------------------------
 
 def test_escape_returns_close_action(screen_ui, player):
     action = screen_ui.handle_input(_key(pygame.K_ESCAPE), player)
+    assert action == {"type": "close"}
+
+
+def test_i_key_returns_close_action(screen_ui, player):
+    """I - тот же toggle, что открыл инвентарь - должен и закрывать его."""
+    action = screen_ui.handle_input(_key(pygame.K_i), player)
+    assert action == {"type": "close"}
+
+
+def test_tab_key_returns_close_action(screen_ui, player):
+    """Tab - альтернативный toggle инвентаря наравне с I."""
+    action = screen_ui.handle_input(_key(pygame.K_TAB), player)
     assert action == {"type": "close"}
 
 
@@ -191,6 +203,28 @@ def test_catalog_rects_do_not_overlap(screen_ui):
     rects = screen_ui._catalog_rects()
     for i in range(len(rects) - 1):
         assert not rects[i].colliderect(rects[i + 1]) or rects[i].right <= rects[i + 1].left
+
+
+# --- Броня (issue #63) -------------------------------------------------------
+
+def test_armor_bar_rects_one_per_slot(screen_ui):
+    from src.entities.armor import SLOT_NAMES
+    rects = screen_ui._armor_bar_rects()
+    assert len(rects) == len(SLOT_NAMES)
+
+
+def test_armor_bar_rects_do_not_overlap(screen_ui):
+    rects = screen_ui._armor_bar_rects()
+    for i in range(len(rects) - 1):
+        assert rects[i].right <= rects[i + 1].left
+
+
+def test_draw_reflects_depleted_armor_shield(screen_ui, player):
+    """После пробития щита brony draw() не крашится и current_shield=0."""
+    screen = pygame.display.get_surface()
+    player.equipment.absorb_damage(player.equipment.total_max_shield)
+    assert player.equipment.total_shield == 0
+    screen_ui.draw(screen, player)  # не должно крашнуться
 
 
 # --- draw() smoke ------------------------------------------------------------

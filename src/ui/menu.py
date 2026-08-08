@@ -71,8 +71,21 @@ class MainMenu:
         if self.selected_index >= len(self.menu_items):
             self.selected_index = len(self.menu_items) - 1
     
+    def _menu_item_rects(self):
+        """Прямоугольники пунктов меню для хит-тестинга мыши.
+
+        Геометрия должна совпадать с раскладкой в draw().
+        """
+        width = get_config('WIDTH')
+        menu_start_y = 250
+        rects = []
+        for i in range(len(self.menu_items)):
+            y_pos = menu_start_y + i * 70
+            rects.append(pygame.Rect(width // 2 - 150, y_pos - 25, 300, 50))
+        return rects
+
     def handle_input(self, event):
-        """Обработка ввода в меню"""
+        """Обработка ввода в меню (клавиатура и мышь)"""
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
                 self.selected_index = (self.selected_index - 1) % len(self.menu_items)
@@ -80,6 +93,16 @@ class MainMenu:
                 self.selected_index = (self.selected_index + 1) % len(self.menu_items)
             elif event.key == pygame.K_RETURN:
                 return self.get_selected_action()
+        elif event.type == pygame.MOUSEMOTION:
+            for i, rect in enumerate(self._menu_item_rects()):
+                if rect.collidepoint(event.pos):
+                    self.selected_index = i
+                    break
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for i, rect in enumerate(self._menu_item_rects()):
+                if rect.collidepoint(event.pos):
+                    self.selected_index = i
+                    return self.get_selected_action()
         return None
     
     def get_selected_action(self):
@@ -122,15 +145,15 @@ class MainMenu:
         
         # Пункты меню с улучшенной стилизацией
         menu_start_y = 250
+        item_rects = self._menu_item_rects()
         for i, item in enumerate(self.menu_items):
             y_pos = menu_start_y + i * 70
-            
+
             # Цвет и эффекты для выбранного пункта
             if i == self.selected_index:
                 color = get_color('YELLOW')
                 # Рамка вокруг выбранного пункта
-                menu_rect = pygame.Rect(get_config('WIDTH') // 2 - 150, y_pos - 25, 300, 50)
-                pygame.draw.rect(screen, get_color('DARK_GRAY'), menu_rect, 2)
+                pygame.draw.rect(screen, get_color('DARK_GRAY'), item_rects[i], 2)
                 # Стрелочки для выбранного пункта
                 arrow_font = pygame.font.Font(None, 48)
                 left_arrow = arrow_font.render("►", True, get_color('YELLOW'))
@@ -148,7 +171,7 @@ class MainMenu:
         # Инструкции внизу экрана
         instruction_font = pygame.font.Font(None, 24)
         instructions = [
-            "↑↓ - Навигация по меню",
+            "↑↓ - Навигация по меню, мышь - наведение и клик",
             "Enter - Выбрать",
             "ESC - Выход (в игре - возврат в меню)"
         ]

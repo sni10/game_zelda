@@ -127,6 +127,48 @@ def test_player_ammo_backward_compat_without_ammo_key(tmp_save_system):
     assert p2.reserve == default_reserve
 
 
+def test_player_armor_roundtrip(tmp_save_system):
+    """Текущий щит брони (issue #63) переживает save -> load -> apply."""
+    world = _MockWorld()
+    p = Player(0.0, 0.0)
+    # Пробиваем щит неравномерно, чтобы отличить восстановленные значения
+    # от дефолтного полного щита.
+    p.equipment.absorb_damage(600)
+
+    snapshot = {
+        slot: armor.current_shield
+        for slot, armor in p.equipment.slots.items()
+    }
+    assert p.equipment.total_shield < p.equipment.total_max_shield  # предусловие
+
+    assert tmp_save_system.save_game(p, world) is True
+    data = tmp_save_system.load_game()
+    assert data is not None
+    assert isinstance(data["player"]["armor"], dict)
+
+    p2 = Player(0, 0)
+    tmp_save_system.apply_save_data_to_player(p2, data)
+
+    for slot, armor in p2.equipment.slots.items():
+        assert armor.current_shield == snapshot[slot]
+
+
+def test_player_armor_backward_compat_without_armor_key(tmp_save_system):
+    """Сейв версии < 1.4 (без ключа 'armor') не должен крашить загрузку -
+    оставляем дефолтный полный щит стартового комплекта."""
+    world = _MockWorld()
+    p = Player(0.0, 0.0)
+
+    assert tmp_save_system.save_game(p, world) is True
+    data = tmp_save_system.load_game()
+    del data["player"]["armor"]  # эмулируем старый сейв без брони
+
+    p2 = Player(0, 0)
+    tmp_save_system.apply_save_data_to_player(p2, data)
+
+    assert p2.equipment.total_shield == p2.equipment.total_max_shield
+
+
 # ---------------------------------------------------------------------------
 # Pickups round-trip
 # ---------------------------------------------------------------------------

@@ -482,6 +482,37 @@ class TestPlayer:
         self.player.heal(max_hp)
         assert self.player.health == max_hp
 
+    def test_take_damage_from_enemy_absorbed_by_shield_leaves_health_untouched(self):
+        """Armor shield (issue #63) soaks up enemy contact damage before HP."""
+        initial_health = self.player.health
+        assert self.player.shield == self.player.max_shield  # full armor, precondition
+
+        result = self.player.take_damage_from_enemy(50)
+
+        assert result is True
+        assert self.player.health == initial_health
+        assert self.player.shield == self.player.max_shield - 50
+
+    def test_take_damage_from_enemy_overflow_reduces_health_once_shield_broken(self):
+        """Damage exceeding remaining shield spills into HP."""
+        initial_health = self.player.health
+        max_shield = self.player.max_shield
+
+        result = self.player.take_damage_from_enemy(max_shield + 15)
+
+        assert result is True
+        assert self.player.shield == 0
+        assert self.player.health == initial_health - 15
+
+    def test_take_damage_from_enemy_respects_iframes(self):
+        self.player.take_damage_from_enemy(10)
+        shield_after_first_hit = self.player.shield
+
+        result = self.player.take_damage_from_enemy(10)  # still inside i-frame window
+
+        assert result is False
+        assert self.player.shield == shield_after_first_hit
+
         # Dead player should not heal
         self.player.health = 0
         self.player.heal(50)

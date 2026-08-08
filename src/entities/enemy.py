@@ -24,6 +24,12 @@ class EnemyStats:
     height: int
     color: Tuple[int, int, int]
     damage: int  # урон игроку при будущем контактном бое
+    # Энергощит (issue #63) - второй "слой здоровья" поверх HP, считается в
+    # "попаданиях", не в очках урона (см. Enemy.take_damage). 0 = щита нет -
+    # дефолт сохраняет старое поведение для прямых EnemyStats(...) в тестах.
+    shield_max_hits: int = 0
+    # Таймаут простоя (без урона от игрока) до полного восстановления щита.
+    shield_regen_timeout: float = 5.0
 class Enemy:
     """Базовый враг с HP, AI и базовой отрисовкой."""
     def __init__(self, x, y, stats: EnemyStats, ai: AIBehavior,
@@ -34,6 +40,9 @@ class Enemy:
         self.ai = ai
         self.patrol_zone = patrol_zone
         self.health = stats.max_health
+        # Энергощит (issue #63) - см. EnemyStats.shield_max_hits.
+        self.shield_hits_remaining = stats.shield_max_hits
+        self._shield_regen_timer = 0.0
         self.rect = pygame.Rect(int(x), int(y), stats.width, stats.height)
         # Защита от множественного урона от одной атаки игрока.
         # Атаки длятся 200-400мс - без этого враг получал бы урон
@@ -51,8 +60,13 @@ class Enemy:
         # Флаг: враг вплотную к игроку (позиция откачена из-за коллизии)
         self.touching_player = False
     def take_damage(self, amount: int) -> None:
-        self.health = max(0, self.health - amount)
         self.last_hit_time = pygame.time.get_ticks()
+        self._shield_regen_timer = 0.0
+        if self.shield_hits_remaining > 0:
+            # Щит поглощает удар целиком, пока не разбит - HP не трогаем.
+            self.shield_hits_remaining -= 1
+            return
+        self.health = max(0, self.health - amount)
     def is_dead(self) -> bool:
         return self.health <= 0
     def update(self, dt: float, world, player=None) -> None:
@@ -61,6 +75,11 @@ class Enemy:
         # Тик attack cooldown
         if self.attack_cooldown_timer > 0:
             self.attack_cooldown_timer = max(0.0, self.attack_cooldown_timer - dt)
+        # Регенерация щита (issue #63) - если давно не получал урона.
+        if self.shield_hits_remaining < self.stats.shield_max_hits:
+            self._shield_regen_timer += dt
+            if self._shield_regen_timer >= self.stats.shield_regen_timeout:
+                self.shield_hits_remaining = self.stats.shield_max_hits
         # Knockback приоритетнее AI
         if self.knockback_timer > 0:
             self.knockback_timer -= dt
@@ -126,17 +145,31 @@ class Enemy:
             color = self.stats.color
         pygame.draw.rect(screen, color,
                          (sx, sy, self.stats.width, self.stats.height))
-        if self.health < self.stats.max_health:
-            self._draw_health_bar(screen, sx, sy)
-    def _draw_health_bar(self, screen, sx, sy) -> None:
+        self._draw_status_bars(screen, sx, sy)
+    def _draw_status_bars(self, screen, sx, sy) -> None:
+        """HP-бар (красный/зелёный) всегда виден для всех типов врагов -
+        раньше рисовался только при health < max_health, из-за чего у
+        1-HP врагов (Light/Fast) практически не был виден. Если у типа
+        есть энергощит (issue #63) - вторая, синяя полоска над HP-баром."""
         bar_w = self.stats.width
         bar_h = 4
-        bar_y = sy - bar_h - 2
-        pygame.draw.rect(screen, (40, 40, 40), (sx, bar_y, bar_w, bar_h))
+        gap = 2
+        hp_bar_y = sy - bar_h - gap
+        pygame.draw.rect(screen, (40, 40, 40), (sx, hp_bar_y, bar_w, bar_h))
         fill_w = int(bar_w * self.health / self.stats.max_health)
         if fill_w > 0:
             pygame.draw.rect(screen, (60, 200, 60),
-                             (sx, bar_y, fill_w, bar_h))
+                             (sx, hp_bar_y, fill_w, bar_h))
+        if self.stats.shield_max_hits > 0:
+            shield_bar_y = hp_bar_y - bar_h - gap
+            pygame.draw.rect(screen, (40, 40, 40),
+                             (sx, shield_bar_y, bar_w, bar_h))
+            shield_fill_w = int(
+                bar_w * self.shield_hits_remaining / self.stats.shield_max_hits
+            )
+            if shield_fill_w > 0:
+                pygame.draw.rect(screen, (60, 140, 255),
+                                 (sx, shield_bar_y, shield_fill_w, bar_h))
     def __repr__(self):
         return (f"{self.__class__.__name__}"
                 f"(name={self.stats.name}, hp={self.health}/{self.stats.max_health}, "
@@ -151,6 +184,10 @@ def _stats_from_config(prefix: str, name: str) -> EnemyStats:
         height=get_config(f'ENEMIES_{prefix}_SIZE'),
         color=get_config(f'ENEMIES_{prefix}_COLOR'),
         damage=get_config(f'ENEMIES_{prefix}_DAMAGE'),
+        shield_max_hits=get_config(f'ENEMIES_{prefix}_SHIELD_HITS', 0),
+        shield_regen_timeout=get_config(
+            'ENEMIES_SHIELD_REGEN_TIMEOUT_SECONDS', 5.0
+        ),
     )
 class LightEnemy(Enemy):
     """Лёгкий враг: малый, средний по скорости, 1 HP."""

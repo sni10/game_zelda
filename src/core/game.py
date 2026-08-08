@@ -149,7 +149,7 @@ class Game:
         print("Игра запущена. WASD - движение (относительно прицела), "
               "мышь - прицел (360°), Space/ЛКМ - атака, "
               "1..8 - слот оружия, R/ПКМ - перезарядка, "
-              "I - инвентарь, "
+              "I/Tab - инвентарь, "
               "F1 - debug, F5 - quicksave, F6 - save menu, "
               "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
@@ -165,6 +165,13 @@ class Game:
             # Инвентарь - drag-and-drop слотов оружия мышью.
             if self.state == GameState.INVENTORY:
                 self._handle_inventory_event(event)
+                continue
+
+            # Главное меню - наведение/клик мышью по пунктам.
+            if self.state == GameState.MENU and event.type in (
+                pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN
+            ):
+                self._handle_menu_input(event)
                 continue
 
             # ЛКМ дополнительно к Space атакует в текущем направлении прицела
@@ -184,7 +191,7 @@ class Game:
                 continue
 
             if self.state == GameState.MENU:
-                self._handle_menu_key(event)
+                self._handle_menu_input(event)
             elif self.state == GameState.PLAYING:
                 self._handle_playing_key(event)
             elif self.state == GameState.GAME_OVER:
@@ -192,7 +199,7 @@ class Game:
             elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU):
                 self._handle_save_load_menu_key(event)
 
-    def _handle_menu_key(self, event):
+    def _handle_menu_input(self, event):
         action = self.menu.handle_input(event)
         if action == "new_game":
             self.start_new_game()
@@ -235,7 +242,7 @@ class Game:
                     )
         elif event.key == pygame.K_r:
             self._reload_current_weapon()
-        elif event.key == pygame.K_i:
+        elif event.key in (pygame.K_i, pygame.K_TAB):
             self._open_inventory()
 
     def _reload_current_weapon(self) -> None:
