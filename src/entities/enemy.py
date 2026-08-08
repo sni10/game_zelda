@@ -24,6 +24,12 @@ class EnemyStats:
     height: int
     color: Tuple[int, int, int]
     damage: int  # урон игроку при будущем контактном бое
+    # Энергощит (issue #63) - второй "слой здоровья" поверх HP, считается в
+    # "попаданиях", не в очках урона (см. Enemy.take_damage). 0 = щита нет -
+    # дефолт сохраняет старое поведение для прямых EnemyStats(...) в тестах.
+    shield_max_hits: int = 0
+    # Таймаут простоя (без урона от игрока) до полного восстановления щита.
+    shield_regen_timeout: float = 5.0
 class Enemy:
     """Базовый враг с HP, AI и базовой отрисовкой."""
     def __init__(self, x, y, stats: EnemyStats, ai: AIBehavior,

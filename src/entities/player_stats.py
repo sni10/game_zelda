@@ -6,12 +6,19 @@ Single Responsibility: хранить HP/XP/Level/Coins, наносить/леч
 Не знает про pygame, ввод, рендер или мир.
 """
 from src.core.config_loader import get_config
+from src.entities.armor import EquipmentSlots, default_equipment
 
 
 class PlayerStats:
     """Здоровье, прогрессия и базовые характеристики игрока."""
 
     def __init__(self, max_health: int):
+        # Броня (issue #63) - стартовый комплект надет сразу (заглушка для
+        # теста, см. src/entities/armor.py). hp_bonus применяется один раз
+        # здесь, до установки self.health, чтобы игрок стартовал с полным HP.
+        self.equipment: EquipmentSlots = default_equipment()
+        max_health += self.equipment.total_hp_bonus
+
         # HP
         self.max_health = max_health
         self.health = max_health
@@ -57,10 +64,40 @@ class PlayerStats:
             game_stats.record_damage_taken(damage)
         return True
 
+    def take_damage_from_enemy(self, damage: int, game_stats=None) -> bool:
+        """Нанести урон от врага (контактная атака) - в отличие от
+        take_damage(), сначала гасит defense/щит брони, и только остаток
+        уходит в HP. Уважает i-frames как обычный урон. Возвращает True,
+        если удар состоялся (даже если весь урон поглотил щит) - это нужно
+        вызывающему коду (EnemyManager.apply_contact_damage) для knockback/
+        retreat/cooldown, которые должны сработать при любом попадании."""
+        if self.is_dead():
+            return False
+        if self.iframe_timer > 0:
+            return False
+        reduced = max(0, damage - self.equipment.total_defense)
+        hp_damage = self.equipment.absorb_damage(reduced)
+        if hp_damage > 0:
+            self.health = max(0, self.health - hp_damage)
+            if game_stats:
+                game_stats.record_damage_taken(hp_damage)
+        self.iframe_timer = self._iframe_duration
+        return True
+
     def heal(self, amount: int) -> None:
         """Восстановить здоровье (не выше max)."""
         if not self.is_dead():
             self.health = min(self.health + amount, self.max_health)
+
+    @property
+    def shield(self) -> int:
+        """Суммарный текущий щит по всей надетой броне."""
+        return self.equipment.total_shield
+
+    @property
+    def max_shield(self) -> int:
+        """Суммарный максимальный щит по всей надетой броне."""
+        return self.equipment.total_max_shield
 
     def get_health_percentage(self) -> float:
         """Процент здоровья (0.0 – 1.0)."""
