@@ -13,6 +13,14 @@ from src.core.config_loader import get_color
 class HUD:
     """Head-Up Display: полоса здоровья + слоты оружий + монеты + level/XP."""
 
+    # Геометрия верхнего левого блока (щит/HP/XP) - вынесена в константы,
+    # чтобы полоски друг под другом не разъезжались при правке одной из них.
+    SHIELD_BAR_HEIGHT = 8
+    _GAP = 2
+    HEALTH_BAR_Y = 10 + SHIELD_BAR_HEIGHT + _GAP        # 20
+    _XP_BAR_Y = HEALTH_BAR_Y + 20 + _GAP                # 42
+    _WEAPON_SLOTS_START_Y = _XP_BAR_Y + 5 + 8           # 55
+
     def __init__(self):
         # Шрифты создаются один раз — pygame.font.Font дорогой по инициализации
         self._font_pct = pygame.font.Font(None, 24)
@@ -27,6 +35,7 @@ class HUD:
         """Отрисовать весь HUD."""
         if player is None:
             return
+        self._draw_shield_bar(screen, player)
         self._draw_health_bar(screen, player)
         self._draw_xp_bar(screen, player)
         self._draw_level_badge(screen, player)
@@ -35,10 +44,25 @@ class HUD:
 
     # --- Внутренние методы рендера ---------------------------------------
 
-    def _draw_health_bar(self, screen: pygame.Surface, player) -> None:
-        """Полоска здоровья игрока в верхнем-левом углу."""
-        bar_width, bar_height = 200, 20
+    def _draw_shield_bar(self, screen: pygame.Surface, player) -> None:
+        """Полоска щита брони (issue #63) - синяя, над полосой здоровья."""
+        bar_width, bar_height = 200, self.SHIELD_BAR_HEIGHT
         bar_x, bar_y = 10, 10
+
+        max_shield = player.max_shield
+        pct = player.shield / max_shield if max_shield > 0 else 0
+        fill_w = int(bar_width * pct)
+
+        pygame.draw.rect(screen, get_color('DARK_GRAY'),
+                         (bar_x, bar_y, bar_width, bar_height))
+        if fill_w > 0:
+            pygame.draw.rect(screen, (60, 140, 255),
+                             (bar_x, bar_y, fill_w, bar_height))
+
+    def _draw_health_bar(self, screen: pygame.Surface, player) -> None:
+        """Полоска здоровья игрока - под полоской щита."""
+        bar_width, bar_height = 200, 20
+        bar_x, bar_y = 10, self.HEALTH_BAR_Y
         border_width = 2
 
         pct = player.health / player.max_health if player.max_health > 0 else 0
@@ -69,7 +93,7 @@ class HUD:
 
     def _draw_xp_bar(self, screen: pygame.Surface, player) -> None:
         """Тонкая полоска XP под полоской здоровья."""
-        bar_x, bar_y = 10, 33
+        bar_x, bar_y = 10, self._XP_BAR_Y
         bar_width, bar_height = 200, 5
 
         stats = player.stats
@@ -86,12 +110,12 @@ class HUD:
         text = f"Lv.{player.level}"
         surf = self._font_level.render(text, True, (200, 200, 255))
         # Справа от HP текста (с запасом)
-        screen.blit(surf, (310, 12))
+        screen.blit(surf, (310, self.HEALTH_BAR_Y + 2))
 
     def _draw_weapon_slots(self, screen: pygame.Surface, player) -> None:
         """Слоты оружий с подсветкой активного — под полоской здоровья."""
         slot_size, gap = 36, 6
-        start_x, start_y = 10, 46
+        start_x, start_y = 10, self._WEAPON_SLOTS_START_Y
 
         for i, weapon in enumerate(player.weapons):
             slot_x = start_x + i * (slot_size + gap)
