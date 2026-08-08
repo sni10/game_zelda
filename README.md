@@ -61,7 +61,7 @@ A base implementation of a 2D Zelda-style game using Python and Pygame.
 - **Shift** - Sprint.
 - **1-8** - Select weapon slot.
 - **R** or **Right Click** - Reload.
-- **I** - Open inventory.
+- **I** or **Tab** - Open/close inventory.
 - **F1** - Toggle debug information.
 - **F5** - Quick save.
 - **F9** - Quick load.
