@@ -149,7 +149,7 @@ class Game:
         print("Игра запущена. WASD - движение (относительно прицела), "
               "мышь - прицел (360°), Space/ЛКМ - атака, "
               "1..8 - слот оружия, R/ПКМ - перезарядка, "
-              "I - инвентарь, "
+              "I/Tab - инвентарь, "
               "F1 - debug, F5 - quicksave, F6 - save menu, "
               "F9 - quickload, ESC - меню")
         self.state = GameState.PLAYING
@@ -235,7 +235,7 @@ class Game:
                     )
         elif event.key == pygame.K_r:
             self._reload_current_weapon()
-        elif event.key == pygame.K_i:
+        elif event.key in (pygame.K_i, pygame.K_TAB):
             self._open_inventory()
 
     def _reload_current_weapon(self) -> None:

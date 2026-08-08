@@ -3,9 +3,9 @@ InventoryScreen — экран инвентаря (v0.4.x). Пока показ�
 оружия (брони/предметов ещё нет - Armor/Inventory-контейнер из BACKLOG.md
 v0.4.1/v0.4.3 не реализованы) с мышиным drag-and-drop.
 
-Открывается из PLAYING по клавише I, ставит игру на паузу (через
+Открывается из PLAYING по клавише I или Tab, ставит игру на паузу (через
 GameState.INVENTORY - Game.update() уже не тикает вне PLAYING, отдельный
-флаг паузы не нужен). Esc закрывает, игра возобновляется.
+флаг паузы не нужен). Esc/I/Tab закрывают, игра возобновляется.
 
 Всегда показывает все MAX_WEAPON_SLOTS (8) слотов, а не только уже
 разлоченные игроком - ещё не открытые слоты рисуются вдвое прозрачнее и не
@@ -23,7 +23,7 @@ handle_input(event, player) возвращает action dict или None - му�
 
 API ↔ Game:
     handle_input(event, player) → action dict | None
-        {"type": "close"}                                            — Esc
+        {"type": "close"}                                            — Esc/I/Tab
         {"type": "move_weapon", "from_index": i, "to_index": j}       — своп слотов
         {"type": "set_slot_weapon", "index": i, "weapon_id": wid}     — оружие из каталога в слот
 """
@@ -112,7 +112,9 @@ class InventoryScreen:
     # --- Ввод ------------------------------------------------------------
 
     def handle_input(self, event, player) -> Optional[dict]:
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+        if event.type == pygame.KEYDOWN and event.key in (
+            pygame.K_ESCAPE, pygame.K_i, pygame.K_TAB
+        ):
             self._dragging = None
             return {"type": "close"}
 
@@ -175,7 +177,7 @@ class InventoryScreen:
             self._draw_catalog_entry(screen, rect, weapon_id)
 
         help_text = self._font_help.render(
-            "ЛКМ — перетащить оружие в слот или поменять слоты местами  |  Esc — закрыть",
+            "ЛКМ — перетащить оружие в слот или поменять слоты местами  |  Esc/I/Tab — закрыть",
             True, (180, 180, 180),
         )
         screen.blit(help_text, help_text.get_rect(
