@@ -211,6 +211,67 @@ class TestMainMenu(unittest.TestCase):
         action = menu.handle_input(event)
         self.assertEqual(action, "load_game")
     
+    def test_mouse_motion_hover_selects_item(self):
+        """Наведение мыши на пункт меню обновляет selected_index"""
+        menu = MainMenu()
+        with patch('src.ui.menu.get_config') as mock_get_config:
+            mock_get_config.side_effect = lambda key: {'WIDTH': 800, 'HEIGHT': 600}.get(key, 0)
+            rects = menu._menu_item_rects()
+            target_index = len(menu.menu_items) - 1
+
+            event = MagicMock()
+            event.type = pygame.MOUSEMOTION
+            event.pos = rects[target_index].center
+
+            menu.handle_input(event)
+        self.assertEqual(menu.selected_index, target_index)
+
+    def test_mouse_motion_outside_items_keeps_selection(self):
+        """Движение мыши вне пунктов меню не меняет выбор"""
+        menu = MainMenu()
+        menu.selected_index = 0
+
+        with patch('src.ui.menu.get_config') as mock_get_config:
+            mock_get_config.side_effect = lambda key: {'WIDTH': 800, 'HEIGHT': 600}.get(key, 0)
+            event = MagicMock()
+            event.type = pygame.MOUSEMOTION
+            event.pos = (0, 0)
+
+            menu.handle_input(event)
+        self.assertEqual(menu.selected_index, 0)
+
+    def test_mouse_click_selects_and_activates_item(self):
+        """Клик ЛКМ по пункту меню выбирает его и возвращает действие"""
+        menu = MainMenu()
+        with patch('src.ui.menu.get_config') as mock_get_config:
+            mock_get_config.side_effect = lambda key: {'WIDTH': 800, 'HEIGHT': 600}.get(key, 0)
+            rects = menu._menu_item_rects()
+            exit_index = menu.menu_items.index("Выход")
+
+            event = MagicMock()
+            event.type = pygame.MOUSEBUTTONDOWN
+            event.button = 1
+            event.pos = rects[exit_index].center
+
+            action = menu.handle_input(event)
+        self.assertEqual(menu.selected_index, exit_index)
+        self.assertEqual(action, "exit")
+
+    def test_mouse_right_click_ignored(self):
+        """ПКМ по пункту меню не активирует его"""
+        menu = MainMenu()
+        with patch('src.ui.menu.get_config') as mock_get_config:
+            mock_get_config.side_effect = lambda key: {'WIDTH': 800, 'HEIGHT': 600}.get(key, 0)
+            rects = menu._menu_item_rects()
+
+            event = MagicMock()
+            event.type = pygame.MOUSEBUTTONDOWN
+            event.button = 3
+            event.pos = rects[0].center
+
+            action = menu.handle_input(event)
+        self.assertIsNone(action)
+
     def test_invalid_event_handling(self):
         """Тест обработки неподдерживаемых событий"""
         menu = MainMenu()
