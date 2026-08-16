@@ -174,6 +174,13 @@ class Game:
                 self._handle_menu_input(event)
                 continue
 
+            # Меню сохранения/загрузки - наведение/клик мышью по строкам и кнопкам.
+            if self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU) and (
+                event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN)
+            ):
+                self._handle_save_load_menu_key(event)
+                continue
+
             # ЛКМ дополнительно к Space атакует в текущем направлении прицела
             # (прицел следует за мышью - см. Player.update_aim). Пробел
             # по-прежнему работает как раньше, это не замена, а альтернатива.

@@ -9,6 +9,7 @@ import os
 import pytest
 import pygame
 
+from src.core.config_loader import get_config
 from src.systems.save_system import SaveSystem
 from src.ui.save_load_menu import SaveLoadMenu
 from src.entities.player import Player
@@ -44,6 +45,14 @@ def player():
 def _key(k):
     e = pygame.event.Event(pygame.KEYDOWN, {"key": k})
     return e
+
+
+def _motion(pos):
+    return pygame.event.Event(pygame.MOUSEMOTION, {"pos": pos})
+
+
+def _click(pos, button=1):
+    return pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": pos, "button": button})
 
 
 # --- LOAD mode ----------------------------------------------------------
@@ -232,3 +241,99 @@ def test_load_mode_delete_autosave_via_modal(save_system, player, world):
     assert menu.modal_kind == "autosave"
     action = menu.handle_input(_key(pygame.K_y))
     assert action["type"] == "delete_autosave"
+
+
+# --- Mouse control --------------------------------------------------------
+
+def test_click_on_row_selects_without_activating(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    save_system.save_to_slot(2, player, world)
+    save_system.save_to_slot(3, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    assert menu.selected_index == 0
+
+    _, rect = menu._entry_rects()[2]
+    action = menu.handle_input(_click(rect.center))
+    assert action is None
+    assert menu.selected_index == 2
+
+
+def test_click_outside_rows_and_buttons_does_nothing(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    action = menu.handle_input(_click((1, 1)))
+    assert action is None
+    assert menu.selected_index == 0
+
+
+def test_hover_updates_visual_state_only(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    save_system.save_to_slot(2, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    _, rect = menu._entry_rects()[1]
+    action = menu.handle_input(_motion(rect.center))
+    assert action is None
+    assert menu.selected_index == 0  # hover не двигает курсор выбора
+    assert menu._hover_kind == "entry"
+    assert menu._hover_index == 1
+
+
+def test_primary_button_click_loads_quicksave(save_system, player, world):
+    save_system.save_game(player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    name, _label, rect = [b for b in menu._action_buttons()
+                           if b[0] == "primary"][0]
+    action = menu.handle_input(_click(rect.center))
+    assert action == {"type": "load_quicksave"}
+
+
+def test_delete_button_click_opens_modal_then_yes_button_confirms(
+    save_system, player, world
+):
+    save_system.save_to_slot(1, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
+    _, _, delete_rect = [b for b in menu._action_buttons()
+                         if b[0] == "delete"][0]
+    action = menu.handle_input(_click(delete_rect.center))
+    assert action is None
+    assert menu.modal == "delete"
+
+    yes_rect = menu._modal_button_rects(
+        get_config('WIDTH'), get_config('HEIGHT')
+    )["yes"]
+    action = menu.handle_input(_click(yes_rect.center))
+    assert action == {"type": "delete_slot", "slot_id": 1}
+    assert menu.modal is None
+
+
+def test_modal_no_button_cancels(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
+    menu.handle_input(_key(pygame.K_RETURN))  # открыть overwrite-модалку
+    assert menu.modal == "overwrite"
+
+    no_rect = menu._modal_button_rects(
+        get_config('WIDTH'), get_config('HEIGHT')
+    )["no"]
+    action = menu.handle_input(_click(no_rect.center))
+    assert action is None
+    assert menu.modal is None
+
+
+def test_back_button_click_returns_back_action(save_system):
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    _, _, back_rect = [b for b in menu._action_buttons()
+                       if b[0] == "back"][0]
+    action = menu.handle_input(_click(back_rect.center))
+    assert action == {"type": "back"}
+
+
+def test_delete_button_click_noop_on_quicksave(save_system, player, world):
+    save_system.save_game(player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    # курсор на quicksave — удаление недоступно
+    _, _, delete_rect = [b for b in menu._action_buttons()
+                         if b[0] == "delete"][0]
+    action = menu.handle_input(_click(delete_rect.center))
+    assert action is None
+    assert menu.modal is None

@@ -13,9 +13,12 @@ SaveLoadMenu — единое меню слотов сохранений (v0.3.2
     Enter   — выбрать (load/overwrite save)
     Del     — удалить (только manual-слот, в любом режиме); quicksave удалить нельзя
     Esc     — назад в главное меню (или в игру, если открыт по F6)
+    Мышь    — наведение подсвечивает строку/кнопку, клик по строке выделяет её,
+              клик по кнопке ("Загрузить"/"Сохранить", "Удалить", "Назад")
+              выполняет то же действие, что и соответствующая клавиша
 
 Меню само управляет модальными подтверждениями (перезапись/удаление):
-    Y — да, N/Esc — нет.
+    Y / кнопка "Да" — да, N/Esc / кнопка "Нет" — нет.
 
 Класс **stateful**: вызывайте :meth:`refresh` после изменений на диске
 (вход в меню, после сохранения/удаления).
@@ -78,6 +81,7 @@ class SaveLoadMenu:
         self.font_item = pygame.font.Font(None, 32)
         self.font_meta = pygame.font.Font(None, 22)
         self.font_help = pygame.font.Font(None, 22)
+        self.font_button = pygame.font.Font(None, 28)
         self.font_modal = pygame.font.Font(None, 36)
 
         # Состояние списка
@@ -88,6 +92,12 @@ class SaveLoadMenu:
         # Какого вида запись подтверждаем (manual / autosave) —
         # нужно для маршрутизации delete-action.
         self.modal_kind = None
+
+        # Наведение мыши (только визуальная подсветка) — что сейчас под курсором.
+        # _hover_kind: None | "entry" | "button" | "modal_button"
+        self._hover_kind = None
+        self._hover_index = None   # индекс строки списка (kind == "entry")
+        self._hover_name = None    # имя кнопки (kind == "button"/"modal_button")
 
         # entries — список словарей, представляющих строки списка.
         # Для load: optional quicksave + только заполненные manual-слоты.
@@ -105,6 +115,7 @@ class SaveLoadMenu:
         self.modal = None
         self.modal_slot_id = None
         self.modal_kind = None
+        self._clear_hover()
         self.refresh()
 
     def refresh(self) -> None:
@@ -158,13 +169,25 @@ class SaveLoadMenu:
         if self.selected_index >= len(self.entries):
             self.selected_index = max(0, len(self.entries) - 1)
 
+    def _clear_hover(self) -> None:
+        self._hover_kind = None
+        self._hover_index = None
+        self._hover_name = None
+
     # --- Ввод --------------------------------------------------------------
 
     def handle_input(self, event):
-        """Обработать KEYDOWN, вернуть action dict или None."""
-        if event.type != pygame.KEYDOWN:
+        """Обработать KEYDOWN/MOUSEMOTION/MOUSEBUTTONDOWN, вернуть action dict или None."""
+        if event.type == pygame.KEYDOWN:
+            return self._handle_keydown(event)
+        if event.type == pygame.MOUSEMOTION:
+            self._handle_mouse_motion(event.pos)
             return None
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self._handle_mouse_click(event.pos)
+        return None
 
+    def _handle_keydown(self, event):
         # Модалка перехватывает ввод
         if self.modal is not None:
             return self._handle_modal_input(event)
@@ -188,6 +211,64 @@ class SaveLoadMenu:
         if event.key == pygame.K_RETURN:
             return self._handle_enter(entry)
         if event.key == pygame.K_DELETE:
+            return self._handle_delete(entry)
+        return None
+
+    def _handle_mouse_motion(self, pos):
+        self._clear_hover()
+        width = get_config('WIDTH')
+        height = get_config('HEIGHT')
+
+        if self.modal is not None:
+            for name, rect in self._modal_button_rects(width, height).items():
+                if rect.collidepoint(pos):
+                    self._hover_kind = "modal_button"
+                    self._hover_name = name
+                    return
+            return
+
+        for i, rect in self._entry_rects():
+            if rect.collidepoint(pos):
+                self._hover_kind = "entry"
+                self._hover_index = i
+                return
+
+        for name, _label, rect in self._action_buttons():
+            if rect.collidepoint(pos):
+                self._hover_kind = "button"
+                self._hover_name = name
+                return
+
+    def _handle_mouse_click(self, pos):
+        width = get_config('WIDTH')
+        height = get_config('HEIGHT')
+
+        if self.modal is not None:
+            for name, rect in self._modal_button_rects(width, height).items():
+                if rect.collidepoint(pos):
+                    return self._resolve_modal(confirm=(name == "yes"))
+            return None
+
+        # Клик по строке — только выделяет её (действие выполняется кнопкой).
+        for i, rect in self._entry_rects():
+            if rect.collidepoint(pos):
+                self.selected_index = i
+                return None
+
+        for name, _label, rect in self._action_buttons():
+            if rect.collidepoint(pos):
+                return self._trigger_button(name)
+        return None
+
+    def _trigger_button(self, name):
+        if name == "back":
+            return {"type": "back"}
+        if not self.entries:
+            return None
+        entry = self.entries[self.selected_index]
+        if name == "primary":
+            return self._handle_enter(entry)
+        if name == "delete":
             return self._handle_delete(entry)
         return None
 
@@ -221,24 +302,98 @@ class SaveLoadMenu:
         return None
 
     def _handle_modal_input(self, event):
-        if event.key in (pygame.K_y,):
-            modal, slot_id, kind = (
-                self.modal, self.modal_slot_id, self.modal_kind
-            )
-            self.modal = None
-            self.modal_slot_id = None
-            self.modal_kind = None
-            if modal == "overwrite":
-                return {"type": "save_slot", "slot_id": slot_id}
-            if modal == "delete":
-                if kind == "autosave":
-                    return {"type": "delete_autosave", "slot_id": slot_id}
-                return {"type": "delete_slot", "slot_id": slot_id}
-        elif event.key in (pygame.K_n, pygame.K_ESCAPE):
-            self.modal = None
-            self.modal_slot_id = None
-            self.modal_kind = None
+        if event.key == pygame.K_y:
+            return self._resolve_modal(confirm=True)
+        if event.key in (pygame.K_n, pygame.K_ESCAPE):
+            return self._resolve_modal(confirm=False)
         return None
+
+    def _resolve_modal(self, confirm: bool):
+        modal, slot_id, kind = self.modal, self.modal_slot_id, self.modal_kind
+        self.modal = None
+        self.modal_slot_id = None
+        self.modal_kind = None
+        self._clear_hover()
+        if not confirm:
+            return None
+        if modal == "overwrite":
+            return {"type": "save_slot", "slot_id": slot_id}
+        if modal == "delete":
+            if kind == "autosave":
+                return {"type": "delete_autosave", "slot_id": slot_id}
+            return {"type": "delete_slot", "slot_id": slot_id}
+        return None
+
+    # --- Хит-тестинг мыши (геометрия должна совпадать с draw()) ------------
+
+    def _visible_entries_window(self):
+        """(list_top, row_h, start, end) — видимое окно строк списка."""
+        list_top = 130
+        row_h = 60
+        height = get_config('HEIGHT')
+        max_rows = max(1, (height - list_top - 80) // row_h)
+        start = 0
+        if len(self.entries) > max_rows:
+            start = max(
+                0,
+                min(self.selected_index - max_rows // 2,
+                    len(self.entries) - max_rows),
+            )
+        end = min(len(self.entries), start + max_rows)
+        return list_top, row_h, start, end
+
+    def _entry_rects(self):
+        """[(entry_index, rect), ...] для видимых строк списка."""
+        if not self.entries:
+            return []
+        width = get_config('WIDTH')
+        list_top, row_h, start, end = self._visible_entries_window()
+        rects = []
+        for visible_i, i in enumerate(range(start, end)):
+            y = list_top + visible_i * row_h
+            rect = pygame.Rect(width // 2 - 320, y - 5, 640, row_h - 10)
+            rects.append((i, rect))
+        return rects
+
+    def _action_buttons(self):
+        """[(name, label, rect), ...] — кнопки действий внизу экрана."""
+        width = get_config('WIDTH')
+        height = get_config('HEIGHT')
+        btn_w, btn_h, gap = 170, 44, 24
+        total_w = btn_w * 3 + gap * 2
+        x0 = width // 2 - total_w // 2
+        y = height - 90
+
+        primary_label = "Загрузить" if self.mode == self.MODE_LOAD else "Сохранить"
+        return [
+            ("primary", primary_label, pygame.Rect(x0, y, btn_w, btn_h)),
+            ("delete", "Удалить", pygame.Rect(x0 + btn_w + gap, y, btn_w, btn_h)),
+            ("back", "Назад", pygame.Rect(x0 + 2 * (btn_w + gap), y, btn_w, btn_h)),
+        ]
+
+    def _button_enabled(self, name):
+        if name == "back":
+            return True
+        if not self.entries:
+            return False
+        entry = self.entries[self.selected_index]
+        if name == "primary":
+            return True
+        if name == "delete":
+            return entry["kind"] in ("manual", "autosave") and entry["meta"] is not None
+        return True
+
+    def _modal_button_rects(self, width, height):
+        """{"yes": rect, "no": rect} — кнопки модалки подтверждения."""
+        box_w, box_h = 600, 200
+        box = pygame.Rect((width - box_w) // 2, (height - box_h) // 2,
+                          box_w, box_h)
+        btn_w, btn_h, gap = 120, 40, 30
+        y = box.y + 130
+        return {
+            "yes": pygame.Rect(width // 2 - gap // 2 - btn_w, y, btn_w, btn_h),
+            "no": pygame.Rect(width // 2 + gap // 2, y, btn_w, btn_h),
+        }
 
     # --- Отрисовка ---------------------------------------------------------
 
@@ -262,8 +417,8 @@ class SaveLoadMenu:
         else:
             self._draw_entries(screen, width, height)
 
-        # Подсказки
-        self._draw_help(screen, width, height)
+        # Кнопки действий + подсказка по клавиатуре
+        self._draw_action_buttons(screen, width, height)
 
         # Модалка
         if self.modal == "overwrite":
@@ -271,40 +426,26 @@ class SaveLoadMenu:
                 screen, width, height,
                 title="Перезаписать сохранение?",
                 detail=self._slot_detail(self.modal_slot_id),
-                hint="Y — да, N/Esc — нет",
             )
         elif self.modal == "delete":
             self._draw_modal(
                 screen, width, height,
                 title="Удалить сохранение?",
                 detail=self._slot_detail(self.modal_slot_id, self.modal_kind),
-                hint="Y — да, N/Esc — нет",
             )
 
     def _draw_entries(self, screen, width, height):
-        list_top = 130
-        row_h = 60
-        # Если вдруг список длиннее экрана — простой scroll вокруг курсора
-        max_rows = max(1, (height - list_top - 80) // row_h)
-        start = 0
-        if len(self.entries) > max_rows:
-            start = max(
-                0,
-                min(self.selected_index - max_rows // 2,
-                    len(self.entries) - max_rows),
-            )
-        end = min(len(self.entries), start + max_rows)
-
-        for visible_i, i in enumerate(range(start, end)):
+        for i, rect in self._entry_rects():
             entry = self.entries[i]
-            y = list_top + visible_i * row_h
+            y = rect.y + 5
 
             selected = i == self.selected_index
-            color = (get_color('YELLOW') if selected
-                     else get_color('WHITE'))
+            hovered = self._hover_kind == "entry" and self._hover_index == i
+            color = get_color('YELLOW') if selected else get_color('WHITE')
             if selected:
-                rect = pygame.Rect(width // 2 - 320, y - 5, 640, row_h - 10)
                 pygame.draw.rect(screen, get_color('DARK_GRAY'), rect, 2)
+            elif hovered:
+                pygame.draw.rect(screen, get_color('DARK_GRAY'), rect, 1)
 
             label_surf = self.font_item.render(entry["label"], True, color)
             screen.blit(label_surf, (width // 2 - 300, y))
@@ -316,7 +457,6 @@ class SaveLoadMenu:
                 meta_color = get_color('GRAY')
             elif not meta.get("valid", True):
                 meta_text = "[повреждён]"
-                meta_color = get_color('RED') if 'RED' in dir() else (200, 80, 80)
                 meta_color = (200, 80, 80)
             else:
                 meta_text = (
@@ -329,22 +469,28 @@ class SaveLoadMenu:
             meta_surf = self.font_meta.render(meta_text, True, meta_color)
             screen.blit(meta_surf, (width // 2 - 300, y + 28))
 
-    def _draw_help(self, screen, width, height):
-        if self.mode == self.MODE_LOAD:
-            lines = [
-                "↑↓ — Навигация    Enter — Загрузить    Del — Удалить    Esc — Назад",
-            ]
-        else:
-            lines = [
-                "↑↓ — Навигация    Enter — Сохранить    Del — Удалить    Esc — Назад",
-            ]
-        y = height - 40
-        for line in lines:
-            surf = self.font_help.render(line, True, get_color('GRAY'))
-            screen.blit(surf, surf.get_rect(center=(width // 2, y)))
-            y += 22
+    def _draw_action_buttons(self, screen, width, height):
+        for name, label, rect in self._action_buttons():
+            enabled = self._button_enabled(name)
+            hovered = self._hover_kind == "button" and self._hover_name == name
 
-    def _draw_modal(self, screen, width, height, title, detail, hint):
+            if not enabled:
+                color = get_color('GRAY')
+            elif hovered:
+                color = get_color('YELLOW')
+            else:
+                color = get_color('WHITE')
+
+            pygame.draw.rect(screen, color, rect, 2)
+            text = self.font_button.render(label, True, color)
+            screen.blit(text, text.get_rect(center=rect.center))
+
+        hint = self.font_help.render(
+            "↑↓ — навигация    клик по строке — выделить", True, get_color('GRAY')
+        )
+        screen.blit(hint, hint.get_rect(center=(width // 2, height - 20)))
+
+    def _draw_modal(self, screen, width, height, title, detail):
         # Затемняем фон
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
@@ -364,9 +510,13 @@ class SaveLoadMenu:
         screen.blit(detail_surf,
                     detail_surf.get_rect(center=(width // 2, box.y + 100)))
 
-        hint_surf = self.font_help.render(hint, True, get_color('YELLOW'))
-        screen.blit(hint_surf,
-                    hint_surf.get_rect(center=(width // 2, box.y + 150)))
+        for name, rect in self._modal_button_rects(width, height).items():
+            hovered = self._hover_kind == "modal_button" and self._hover_name == name
+            color = get_color('YELLOW') if hovered else get_color('WHITE')
+            pygame.draw.rect(screen, color, rect, 2)
+            label = "Да" if name == "yes" else "Нет"
+            text = self.font_button.render(label, True, color)
+            screen.blit(text, text.get_rect(center=rect.center))
 
     def _slot_detail(self, slot_id, kind=None) -> str:
         if slot_id is None:
