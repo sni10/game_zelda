@@ -161,34 +161,68 @@ class SaveLoadMenu:
     # --- Ввод --------------------------------------------------------------
 
     def handle_input(self, event):
-        """Обработать KEYDOWN, вернуть action dict или None."""
-        if event.type != pygame.KEYDOWN:
+        """Обработать ввод (клавиатура и мышь), вернуть action dict / None."""
+        if event.type not in (
+            pygame.KEYDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN
+        ):
             return None
 
         # Модалка перехватывает ввод
         if self.modal is not None:
-            return self._handle_modal_input(event)
+            if event.type == pygame.KEYDOWN:
+                return self._handle_modal_input(event)
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                return self._handle_modal_mouse(event.pos)
+            return None
 
-        if event.key == pygame.K_ESCAPE:
-            return {"type": "back"}
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                return {"type": "back"}
 
+            if not self.entries:
+                # Нет элементов — единственное доступное действие это back
+                return None
+
+            if event.key == pygame.K_UP:
+                self.selected_index = (
+                    (self.selected_index - 1) % len(self.entries)
+                )
+                return None
+            if event.key == pygame.K_DOWN:
+                self.selected_index = (
+                    (self.selected_index + 1) % len(self.entries)
+                )
+                return None
+
+            entry = self.entries[self.selected_index]
+
+            if event.key == pygame.K_RETURN:
+                return self._handle_enter(entry)
+            if event.key == pygame.K_DELETE:
+                return self._handle_delete(entry)
+            return None
+
+        # Мышь по строкам списка (вне модалки)
         if not self.entries:
-            # Нет элементов — единственное доступное действие это back
             return None
 
-        if event.key == pygame.K_UP:
-            self.selected_index = (self.selected_index - 1) % len(self.entries)
-            return None
-        if event.key == pygame.K_DOWN:
-            self.selected_index = (self.selected_index + 1) % len(self.entries)
+        width = get_config('WIDTH')
+        height = get_config('HEIGHT')
+
+        if event.type == pygame.MOUSEMOTION:
+            for i, _y, rect in self._entry_rows(width, height):
+                if rect.collidepoint(event.pos):
+                    self.selected_index = i
+                    break
             return None
 
-        entry = self.entries[self.selected_index]
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for i, _y, rect in self._entry_rows(width, height):
+                if rect.collidepoint(event.pos):
+                    self.selected_index = i
+                    return self._handle_enter(self.entries[i])
+            return None
 
-        if event.key == pygame.K_RETURN:
-            return self._handle_enter(entry)
-        if event.key == pygame.K_DELETE:
-            return self._handle_delete(entry)
         return None
 
     def _handle_enter(self, entry):
@@ -222,23 +256,41 @@ class SaveLoadMenu:
 
     def _handle_modal_input(self, event):
         if event.key in (pygame.K_y,):
-            modal, slot_id, kind = (
-                self.modal, self.modal_slot_id, self.modal_kind
-            )
-            self.modal = None
-            self.modal_slot_id = None
-            self.modal_kind = None
-            if modal == "overwrite":
-                return {"type": "save_slot", "slot_id": slot_id}
-            if modal == "delete":
-                if kind == "autosave":
-                    return {"type": "delete_autosave", "slot_id": slot_id}
-                return {"type": "delete_slot", "slot_id": slot_id}
+            return self._confirm_modal()
         elif event.key in (pygame.K_n, pygame.K_ESCAPE):
-            self.modal = None
-            self.modal_slot_id = None
-            self.modal_kind = None
+            self._cancel_modal()
         return None
+
+    def _handle_modal_mouse(self, pos):
+        """Клик мышью по кнопкам Да/Нет в модалке подтверждения."""
+        width = get_config('WIDTH')
+        height = get_config('HEIGHT')
+        yes_rect, no_rect = self._modal_button_rects(width, height)
+        if yes_rect.collidepoint(pos):
+            return self._confirm_modal()
+        if no_rect.collidepoint(pos):
+            self._cancel_modal()
+        return None
+
+    def _confirm_modal(self):
+        modal, slot_id, kind = (
+            self.modal, self.modal_slot_id, self.modal_kind
+        )
+        self.modal = None
+        self.modal_slot_id = None
+        self.modal_kind = None
+        if modal == "overwrite":
+            return {"type": "save_slot", "slot_id": slot_id}
+        if modal == "delete":
+            if kind == "autosave":
+                return {"type": "delete_autosave", "slot_id": slot_id}
+            return {"type": "delete_slot", "slot_id": slot_id}
+        return None
+
+    def _cancel_modal(self):
+        self.modal = None
+        self.modal_slot_id = None
+        self.modal_kind = None
 
     # --- Отрисовка ---------------------------------------------------------
 
@@ -281,7 +333,12 @@ class SaveLoadMenu:
                 hint="Y — да, N/Esc — нет",
             )
 
-    def _draw_entries(self, screen, width, height):
+    def _entry_rows(self, width, height):
+        """(index, y, rect) для видимых строк списка.
+
+        Общая геометрия для draw() и хит-тестинга мыши в handle_input() —
+        должна оставаться единственным источником правды для раскладки строк.
+        """
         list_top = 130
         row_h = 60
         # Если вдруг список длиннее экрана — простой scroll вокруг курсора
@@ -295,15 +352,21 @@ class SaveLoadMenu:
             )
         end = min(len(self.entries), start + max_rows)
 
+        rows = []
         for visible_i, i in enumerate(range(start, end)):
-            entry = self.entries[i]
             y = list_top + visible_i * row_h
+            rect = pygame.Rect(width // 2 - 320, y - 5, 640, row_h - 10)
+            rows.append((i, y, rect))
+        return rows
+
+    def _draw_entries(self, screen, width, height):
+        for i, y, rect in self._entry_rows(width, height):
+            entry = self.entries[i]
 
             selected = i == self.selected_index
             color = (get_color('YELLOW') if selected
                      else get_color('WHITE'))
             if selected:
-                rect = pygame.Rect(width // 2 - 320, y - 5, 640, row_h - 10)
                 pygame.draw.rect(screen, get_color('DARK_GRAY'), rect, 2)
 
             label_surf = self.font_item.render(entry["label"], True, color)
@@ -332,11 +395,13 @@ class SaveLoadMenu:
     def _draw_help(self, screen, width, height):
         if self.mode == self.MODE_LOAD:
             lines = [
-                "↑↓ — Навигация    Enter — Загрузить    Del — Удалить    Esc — Назад",
+                "↑↓ / мышь — Навигация    Enter / клик — Загрузить    "
+                "Del — Удалить    Esc — Назад",
             ]
         else:
             lines = [
-                "↑↓ — Навигация    Enter — Сохранить    Del — Удалить    Esc — Назад",
+                "↑↓ / мышь — Навигация    Enter / клик — Сохранить    "
+                "Del — Удалить    Esc — Назад",
             ]
         y = height - 40
         for line in lines:
@@ -344,29 +409,64 @@ class SaveLoadMenu:
             screen.blit(surf, surf.get_rect(center=(width // 2, y)))
             y += 22
 
+    def _modal_box_rect(self, width, height):
+        """Прямоугольник окна модалки.
+
+        Общая геометрия для draw() и хит-теста мыши.
+        """
+        box_w, box_h = 600, 220
+        return pygame.Rect(
+            (width - box_w) // 2, (height - box_h) // 2, box_w, box_h
+        )
+
+    def _modal_button_rects(self, width, height):
+        """Прямоугольники кнопок «Да»/«Нет» модалки подтверждения."""
+        box = self._modal_box_rect(width, height)
+        btn_w, btn_h = 120, 40
+        gap = 40
+        start_x = box.centerx - (btn_w * 2 + gap) // 2
+        y = box.y + 135
+        yes_rect = pygame.Rect(start_x, y, btn_w, btn_h)
+        no_rect = pygame.Rect(start_x + btn_w + gap, y, btn_w, btn_h)
+        return yes_rect, no_rect
+
     def _draw_modal(self, screen, width, height, title, detail, hint):
         # Затемняем фон
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
         screen.blit(overlay, (0, 0))
 
-        box_w, box_h = 600, 200
-        box = pygame.Rect((width - box_w) // 2, (height - box_h) // 2,
-                          box_w, box_h)
+        box = self._modal_box_rect(width, height)
         pygame.draw.rect(screen, get_color('DARK_GRAY'), box)
         pygame.draw.rect(screen, get_color('WHITE'), box, 2)
 
         title_surf = self.font_modal.render(title, True, get_color('WHITE'))
         screen.blit(title_surf,
-                    title_surf.get_rect(center=(width // 2, box.y + 50)))
+                    title_surf.get_rect(center=(width // 2, box.y + 45)))
 
         detail_surf = self.font_meta.render(detail, True, get_color('GRAY'))
         screen.blit(detail_surf,
-                    detail_surf.get_rect(center=(width // 2, box.y + 100)))
+                    detail_surf.get_rect(center=(width // 2, box.y + 95)))
 
-        hint_surf = self.font_help.render(hint, True, get_color('YELLOW'))
+        # Кликабельные кнопки "Да"/"Нет"
+        yes_rect, no_rect = self._modal_button_rects(width, height)
+        mouse_pos = pygame.mouse.get_pos()
+        for rect, label in ((yes_rect, "Да (Y)"), (no_rect, "Нет (N)")):
+            hovered = rect.collidepoint(mouse_pos)
+            pygame.draw.rect(screen, get_color('DARK_GRAY'), rect)
+            border_color = (
+                get_color('YELLOW') if hovered else get_color('GRAY')
+            )
+            pygame.draw.rect(screen, border_color, rect, 2)
+            label_color = (
+                get_color('YELLOW') if hovered else get_color('WHITE')
+            )
+            label_surf = self.font_help.render(label, True, label_color)
+            screen.blit(label_surf, label_surf.get_rect(center=rect.center))
+
+        hint_surf = self.font_help.render(hint, True, get_color('GRAY'))
         screen.blit(hint_surf,
-                    hint_surf.get_rect(center=(width // 2, box.y + 150)))
+                    hint_surf.get_rect(center=(width // 2, box.y + 200)))
 
     def _slot_detail(self, slot_id, kind=None) -> str:
         if slot_id is None:

@@ -174,6 +174,14 @@ class Game:
                 self._handle_menu_input(event)
                 continue
 
+            # Меню сохранений/загрузки - наведение/клик мышью по строкам
+            # списка и кнопкам Да/Нет в модалках подтверждения.
+            if self.state in (
+                GameState.LOAD_MENU, GameState.SAVE_MENU
+            ) and event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
+                self._handle_save_load_menu_input(event)
+                continue
+
             # ЛКМ дополнительно к Space атакует в текущем направлении прицела
             # (прицел следует за мышью - см. Player.update_aim). Пробел
             # по-прежнему работает как раньше, это не замена, а альтернатива.
@@ -197,7 +205,7 @@ class Game:
             elif self.state == GameState.GAME_OVER:
                 self._handle_game_over_key(event)
             elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU):
-                self._handle_save_load_menu_key(event)
+                self._handle_save_load_menu_input(event)
 
     def _handle_menu_input(self, event):
         action = self.menu.handle_input(event)
@@ -325,7 +333,7 @@ class Game:
         self._save_menu_return_state = GameState.MENU
         self.state = GameState.SAVE_MENU
 
-    def _handle_save_load_menu_key(self, event):
+    def _handle_save_load_menu_input(self, event):
         if self.save_load_menu is None:
             self.state = GameState.MENU
             return

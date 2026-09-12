@@ -9,6 +9,7 @@ import os
 import pytest
 import pygame
 
+from src.core.config_loader import get_config
 from src.systems.save_system import SaveSystem
 from src.ui.save_load_menu import SaveLoadMenu
 from src.entities.player import Player
@@ -44,6 +45,16 @@ def player():
 def _key(k):
     e = pygame.event.Event(pygame.KEYDOWN, {"key": k})
     return e
+
+
+def _motion(pos):
+    return pygame.event.Event(pygame.MOUSEMOTION, {"pos": pos})
+
+
+def _click(pos, button=1):
+    return pygame.event.Event(
+        pygame.MOUSEBUTTONDOWN, {"pos": pos, "button": button}
+    )
 
 
 # --- LOAD mode ----------------------------------------------------------
@@ -232,3 +243,95 @@ def test_load_mode_delete_autosave_via_modal(save_system, player, world):
     assert menu.modal_kind == "autosave"
     action = menu.handle_input(_key(pygame.K_y))
     assert action["type"] == "delete_autosave"
+
+
+# --- Mouse support (game_zelda#67) ---------------------------------------
+
+def _get_width_height():
+    return get_config('WIDTH'), get_config('HEIGHT')
+
+
+def test_mouse_hover_selects_row(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    save_system.save_to_slot(2, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    assert menu.selected_index == 0
+
+    width, height = _get_width_height()
+    rows = menu._entry_rows(width, height)
+    second_row_rect = rows[1][2]
+
+    action = menu.handle_input(_motion(second_row_rect.center))
+    assert action is None
+    assert menu.selected_index == 1
+
+
+def test_mouse_click_row_acts_like_enter(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    save_system.save_to_slot(4, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+
+    width, height = _get_width_height()
+    rows = menu._entry_rows(width, height)
+    second_row_rect = rows[1][2]
+
+    action = menu.handle_input(_click(second_row_rect.center))
+    assert menu.selected_index == 1
+    assert action == {"type": "load_slot", "slot_id": 4}
+
+
+def test_mouse_click_outside_rows_does_nothing(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    action = menu.handle_input(_click((0, 0)))
+    assert action is None
+    assert menu.selected_index == 0
+
+
+def test_mouse_click_yes_button_confirms_overwrite_modal(
+    save_system, player, world
+):
+    save_system.save_to_slot(1, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
+    # Открываем модалку перезаписи через Enter (курсор на занятом слоте 01)
+    action = menu.handle_input(_key(pygame.K_RETURN))
+    assert menu.modal == "overwrite"
+
+    width, height = _get_width_height()
+    yes_rect, _no_rect = menu._modal_button_rects(width, height)
+    action = menu.handle_input(_click(yes_rect.center))
+    assert action == {"type": "save_slot", "slot_id": 1}
+    assert menu.modal is None
+
+
+def test_mouse_click_no_button_cancels_modal(save_system, player, world):
+    save_system.save_to_slot(1, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
+    menu.handle_input(_key(pygame.K_RETURN))
+    assert menu.modal == "overwrite"
+
+    width, height = _get_width_height()
+    _yes_rect, no_rect = menu._modal_button_rects(width, height)
+    action = menu.handle_input(_click(no_rect.center))
+    assert action is None
+    assert menu.modal is None
+
+
+def test_mouse_ignored_while_modal_open_except_buttons(
+    save_system, player, world
+):
+    save_system.save_to_slot(1, player, world)
+    save_system.save_to_slot(2, player, world)
+    menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
+    menu.handle_input(_key(pygame.K_DELETE))
+    assert menu.modal == "delete"
+
+    width, height = _get_width_height()
+    rows = menu._entry_rows(width, height)
+    other_row_rect = rows[1][2]
+    # Клик/наведение по строке списка не должны просачиваться сквозь модалку
+    action = menu.handle_input(_motion(other_row_rect.center))
+    assert action is None
+    action = menu.handle_input(_click(other_row_rect.center))
+    assert action is None
+    assert menu.modal == "delete"
