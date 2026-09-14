@@ -58,6 +58,9 @@ class EnemyManager:
         """Проверить что точка спавна:
         - в пределах мира
         - проходима (не пересекает obstacles)
+        - достижима пешком от игрока (не изолированный карман ландшафта -
+          иначе враг не может ни дойти до игрока, ни быть атакован, и
+          выглядит "застрявшим")
         - дальше min_distance от игрока (вне зоны видимости)
         """
         # В мире
@@ -68,6 +71,11 @@ class EnemyManager:
         # Не на препятствии
         candidate = pygame.Rect(int(x), int(y), size, size)
         if self.world.check_collision(candidate):
+            return False
+        # Достижимость (опциональная возможность world - не все тестовые
+        # моки мира её реализуют, тогда ограничение просто не применяется)
+        is_reachable = getattr(self.world, 'is_position_reachable', None)
+        if is_reachable is not None and not is_reachable(candidate.centerx, candidate.centery):
             return False
         # Дальше игрока на min_distance
         dx = x - player_x

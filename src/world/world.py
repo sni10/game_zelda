@@ -1,6 +1,7 @@
 import pygame
 import os
-from typing import List
+from collections import deque
+from typing import List, Optional, Set, Tuple
 
 from src.core.config_loader import get_config, get_color
 from src.world.terrain import TerrainType, TRANSLUCENT_OVERLAY_TYPES
@@ -28,6 +29,33 @@ class World:
         # Создаем список препятствий для обратной совместимости
         self.obstacles: List[pygame.Rect] = []
         self.generate_obstacles_from_terrain()
+
+        # Сеточные индексы для O(1) поиска вместо линейного перебора
+        # self.obstacles/self.terrain_tiles. Критично для больших карт -
+        # на мире 200x200 тайлов (40000 тайлов, ~10к сплошных) линейный
+        # перебор на каждый check_collision/get_terrain_at (каждый враг,
+        # снаряд и игрок дергают его каждый кадр) был главным узким местом.
+        #
+        # ВАЖНО: TerrainTile.rect всегда 32x32 (см. src/world/terrain.py) -
+        # это не обязательно совпадает с self.tile_size (из config.ini).
+        # Индекс собирается по фактическому размеру тайла, а не по конфигу,
+        # чтобы check_collision оставался эквивалентен старому линейному
+        # перебору self.obstacles независимо от значения tile_size.
+        self._collision_grid = (
+            self.terrain_tiles[0].rect.width if self.terrain_tiles else self.tile_size
+        )
+        self._solid_tile_set: Set[Tuple[int, int]] = {
+            (tile.x, tile.y) for tile in self.terrain_tiles if tile.is_solid
+        }
+        self._tile_lookup = {(tile.x, tile.y): tile for tile in self.terrain_tiles}
+
+        # Достижимые от старта игрока тайлы (BFS) - используется спавном
+        # врагов (EnemyManager), чтобы не ставить их в изолированные "карманы"
+        # ландшафта, куда игрок не может дойти (враг там физически не может
+        # встретиться с игроком и выглядит "застрявшим"). None = достижимость
+        # не вычислена (стартовая точка сама на непроходимом тайле) -
+        # в этом случае ограничение не применяется.
+        self._reachable_tiles: Optional[Set[Tuple[int, int]]] = self._compute_reachable_tiles()
 
         # Камера
         self._camera = Camera()
@@ -76,12 +104,54 @@ class World:
         """Получить тайл ландшафта в указанной позиции"""
         tile_x = int(x // self.tile_size) * self.tile_size
         tile_y = int(y // self.tile_size) * self.tile_size
-        
-        for tile in self.terrain_tiles:
-            if tile.x == tile_x and tile.y == tile_y:
-                return tile
-        return None
-    
+        return self._tile_lookup.get((tile_x, tile_y))
+
+    def _compute_reachable_tiles(self) -> Optional[Set[Tuple[int, int]]]:
+        """BFS проходимых тайлов от стартовой позиции игрока.
+
+        Возвращает множество (tile_x, tile_y) сплошных-тайловых координат,
+        достижимых пешком от точки спавна игрока, в пределах [0, width) x
+        [0, height). Если стартовый тайл сам непроходим (не должно
+        случаться на валидных картах, но не должно и падать) - возвращает
+        None, что означает "ограничение не применяется".
+        """
+        grid = self._collision_grid
+        start = (
+            int(self.player_start_x) // grid * grid,
+            int(self.player_start_y) // grid * grid,
+        )
+        if start in self._solid_tile_set:
+            return None
+
+        seen = {start}
+        queue = deque([start])
+        while queue:
+            x, y = queue.popleft()
+            for dx, dy in ((grid, 0), (-grid, 0), (0, grid), (0, -grid)):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < self.width and 0 <= ny < self.height):
+                    continue
+                if (nx, ny) in seen or (nx, ny) in self._solid_tile_set:
+                    continue
+                seen.add((nx, ny))
+                queue.append((nx, ny))
+        return seen
+
+    def is_position_reachable(self, x, y) -> bool:
+        """True если тайл в точке (x, y) достижим пешком от старта игрока.
+
+        Используется спавном врагов (EnemyManager), чтобы не заспавнить
+        врага в изолированном "кармане" ландшафта (например, крошечная
+        полость внутри горного массива), недостижимом для игрока - там
+        враг не может ни дойти до игрока, ни быть атакованным, и выглядит
+        "застрявшим". Если достижимость не вычислена (см.
+        _compute_reachable_tiles) - ограничение не применяется (True)."""
+        if self._reachable_tiles is None:
+            return True
+        grid = self._collision_grid
+        tile = (int(x) // grid * grid, int(y) // grid * grid)
+        return tile in self._reachable_tiles
+
     def get_player_start_position(self):
         """Получить стартовую позицию игрока"""
         return self.player_start_x, self.player_start_y
@@ -92,10 +162,21 @@ class World:
                             self.width, self.height)
 
     def check_collision(self, rect):
-        """Проверка коллизии с препятствиями"""
-        for obstacle in self.obstacles:
-            if rect.colliderect(obstacle):
-                return True
+        """Проверка коллизии с препятствиями.
+
+        Смотрит только тайлы сетки, которые пересекает rect (self._solid_tile_set),
+        а не весь self.obstacles - эквивалентно старому линейному перебору
+        (obstacles - это ровно сплошные тайлы 32x32 по сетке), но O(1) вместо
+        O(число сплошных тайлов на карте)."""
+        grid = self._collision_grid
+        tx0 = rect.left // grid
+        tx1 = (rect.right - 1) // grid
+        ty0 = rect.top // grid
+        ty1 = (rect.bottom - 1) // grid
+        for ty in range(ty0, ty1 + 1):
+            for tx in range(tx0, tx1 + 1):
+                if (tx * grid, ty * grid) in self._solid_tile_set:
+                    return True
         return False
     
     def get_visible_obstacles(self, screen_width, screen_height):
