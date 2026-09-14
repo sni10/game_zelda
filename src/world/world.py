@@ -23,8 +23,12 @@ class World:
         self.tiles_y = height // self.tile_size
 
         # Загружаем карту из файла (земля + опциональный overlay)
-        self.terrain_tiles, self.overlay_tiles, self.player_start_x, self.player_start_y = \
-            load_map_from_file(map_file)
+        (
+            self.terrain_tiles,
+            self.overlay_tiles,
+            self.player_start_x,
+            self.player_start_y,
+        ) = load_map_from_file(map_file)
 
         # Создаем список препятствий для обратной совместимости
         self.obstacles: List[pygame.Rect] = []
@@ -55,14 +59,16 @@ class World:
         # встретиться с игроком и выглядит "застрявшим"). None = достижимость
         # не вычислена (стартовая точка сама на непроходимом тайле) -
         # в этом случае ограничение не применяется.
-        self._reachable_tiles: Optional[Set[Tuple[int, int]]] = self._compute_reachable_tiles()
+        self._reachable_tiles: Optional[Set[Tuple[int, int]]] = (
+            self._compute_reachable_tiles()
+        )
 
         # Камера
         self._camera = Camera()
 
         # Параметры эффекта прозрачности overlay (когда игрок под верхним слоем)
-        self.overlay_alpha_under_player = 120   # альфа когда игрок под тайлом
-        self.overlay_alpha_normal = 255         # обычная альфа
+        self.overlay_alpha_under_player = 120  # альфа когда игрок под тайлом
+        self.overlay_alpha_normal = 255  # обычная альфа
         self.player_rect_for_overlay: pygame.Rect = None  # устанавливается из draw()
 
         # Менеджер врагов. Враги хранятся внутри мира - удобно для save/load
@@ -99,7 +105,7 @@ class World:
         for tile in self.terrain_tiles:
             if tile.is_solid:  # Только непроходимые тайлы считаются препятствиями
                 self.obstacles.append(tile.rect)
-    
+
     def get_terrain_at(self, x, y):
         """Получить тайл ландшафта в указанной позиции"""
         tile_x = int(x // self.tile_size) * self.tile_size
@@ -155,11 +161,12 @@ class World:
     def get_player_start_position(self):
         """Получить стартовую позицию игрока"""
         return self.player_start_x, self.player_start_y
-    
+
     def update_camera(self, player_x, player_y, screen_width, screen_height):
         """Обновление позиции камеры для следования за игроком"""
-        self._camera.follow(player_x, player_y, screen_width, screen_height,
-                            self.width, self.height)
+        self._camera.follow(
+            player_x, player_y, screen_width, screen_height, self.width, self.height
+        )
 
     def check_collision(self, rect):
         """Проверка коллизии с препятствиями.
@@ -178,45 +185,57 @@ class World:
                 if (tx * grid, ty * grid) in self._solid_tile_set:
                     return True
         return False
-    
+
     def get_visible_obstacles(self, screen_width, screen_height):
         """Получить препятствия, видимые на экране"""
         visible_obstacles = []
-        camera_rect = pygame.Rect(self.camera_x, self.camera_y, screen_width, screen_height)
-        
+        camera_rect = pygame.Rect(
+            self.camera_x, self.camera_y, screen_width, screen_height
+        )
+
         for obstacle in self.obstacles:
             if camera_rect.colliderect(obstacle):
                 visible_obstacles.append(obstacle)
-        
+
         return visible_obstacles
-    
+
     def draw_background(self, screen):
         """Отрисовка фона мира"""
-        screen.fill(get_color('DARK_GREEN'))
-        
+        screen.fill(get_color("DARK_GREEN"))
+
         # Рисуем сетку для лучшей ориентации
         screen_width = screen.get_width()
         screen_height = screen.get_height()
-        
+
         # Вертикальные линии сетки
         start_x = int(self.camera_x // self.tile_size) * self.tile_size
-        for x in range(start_x, start_x + screen_width + self.tile_size, self.tile_size):
+        for x in range(
+            start_x, start_x + screen_width + self.tile_size, self.tile_size
+        ):
             screen_x = x - self.camera_x
             if 0 <= screen_x <= screen_width:
-                pygame.draw.line(screen, (0, 80, 0), (screen_x, 0), (screen_x, screen_height), 1)
-        
+                pygame.draw.line(
+                    screen, (0, 80, 0), (screen_x, 0), (screen_x, screen_height), 1
+                )
+
         # Горизонтальные линии сетки
         start_y = int(self.camera_y // self.tile_size) * self.tile_size
-        for y in range(start_y, start_y + screen_height + self.tile_size, self.tile_size):
+        for y in range(
+            start_y, start_y + screen_height + self.tile_size, self.tile_size
+        ):
             screen_y = y - self.camera_y
             if 0 <= screen_y <= screen_height:
-                pygame.draw.line(screen, (0, 80, 0), (0, screen_y), (screen_width, screen_y), 1)
-    
+                pygame.draw.line(
+                    screen, (0, 80, 0), (0, screen_y), (screen_width, screen_y), 1
+                )
+
     def draw_obstacles(self, screen):
         """Отрисовка ландшафта"""
         # Отрисовываем все видимые тайлы ландшафта
-        camera_rect = pygame.Rect(self.camera_x, self.camera_y, screen.get_width(), screen.get_height())
-        
+        camera_rect = pygame.Rect(
+            self.camera_x, self.camera_y, screen.get_width(), screen.get_height()
+        )
+
         for tile in self.terrain_tiles:
             if camera_rect.colliderect(tile.rect):
                 tile.draw(screen, self.camera_x, self.camera_y)
@@ -237,8 +256,9 @@ class World:
         if not self.overlay_tiles:
             return
 
-        camera_rect = pygame.Rect(self.camera_x, self.camera_y,
-                                  screen.get_width(), screen.get_height())
+        camera_rect = pygame.Rect(
+            self.camera_x, self.camera_y, screen.get_width(), screen.get_height()
+        )
 
         for tile in self.overlay_tiles:
             if not camera_rect.colliderect(tile.rect):
@@ -247,9 +267,8 @@ class World:
             # Прозрачность только для разрешённых типов И только когда
             # игрок реально пересекает тайл
             is_translucent_type = tile.terrain_type in TRANSLUCENT_OVERLAY_TYPES
-            player_under_tile = (
-                player_rect is not None
-                and tile.rect.colliderect(player_rect)
+            player_under_tile = player_rect is not None and tile.rect.colliderect(
+                player_rect
             )
 
             if is_translucent_type and player_under_tile:
@@ -271,35 +290,53 @@ class World:
         minimap_size = 150
         minimap_x = screen.get_width() - minimap_size - 10
         minimap_y = 10
-        
+
         # Фон мини-карты
-        pygame.draw.rect(screen, get_color('BLACK'), (minimap_x, minimap_y, minimap_size, minimap_size))
-        pygame.draw.rect(screen, get_color('WHITE'), (minimap_x, minimap_y, minimap_size, minimap_size), 2)
-        
+        pygame.draw.rect(
+            screen,
+            get_color("BLACK"),
+            (minimap_x, minimap_y, minimap_size, minimap_size),
+        )
+        pygame.draw.rect(
+            screen,
+            get_color("WHITE"),
+            (minimap_x, minimap_y, minimap_size, minimap_size),
+            2,
+        )
+
         # Масштаб мини-карты
         scale_x = minimap_size / self.width
         scale_y = minimap_size / self.height
-        
+
         # Рисуем препятствия на мини-карте
-        for obstacle in self.obstacles[::10]:  # Показываем каждое 10-е препятствие для производительности
+        for obstacle in self.obstacles[
+            ::10
+        ]:  # Показываем каждое 10-е препятствие для производительности
             mini_x = minimap_x + int(obstacle.x * scale_x)
             mini_y = minimap_y + int(obstacle.y * scale_y)
             mini_w = max(1, int(obstacle.width * scale_x))
             mini_h = max(1, int(obstacle.height * scale_y))
-            pygame.draw.rect(screen, get_color('GRAY'), (mini_x, mini_y, mini_w, mini_h))
-        
+            pygame.draw.rect(
+                screen, get_color("GRAY"), (mini_x, mini_y, mini_w, mini_h)
+            )
+
         # Рисуем игрока на мини-карте
         player_mini_x = minimap_x + int(player_x * scale_x)
         player_mini_y = minimap_y + int(player_y * scale_y)
-        pygame.draw.circle(screen, get_color('RED'), (player_mini_x, player_mini_y), 3)
-        
+        pygame.draw.circle(screen, get_color("RED"), (player_mini_x, player_mini_y), 3)
+
         # Рисуем область видимости камеры
         camera_mini_x = minimap_x + int(self.camera_x * scale_x)
         camera_mini_y = minimap_y + int(self.camera_y * scale_y)
         camera_mini_w = int(screen.get_width() * scale_x)
         camera_mini_h = int(screen.get_height() * scale_y)
-        pygame.draw.rect(screen, get_color('YELLOW'), (camera_mini_x, camera_mini_y, camera_mini_w, camera_mini_h), 1)
-    
+        pygame.draw.rect(
+            screen,
+            get_color("YELLOW"),
+            (camera_mini_x, camera_mini_y, camera_mini_w, camera_mini_h),
+            1,
+        )
+
     def draw(self, screen, player_x, player_y):
         """Отрисовка ЗЕМЛЯНОГО слоя мира (без overlay).
 
