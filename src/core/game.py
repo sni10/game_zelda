@@ -109,7 +109,11 @@ class Game:
         self.log("=== ЗАПУСК НОВОЙ ИГРЫ ===", "IMPORTANT")
 
         # Загружаем основной (и единственный) мир
-        self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+        self.world = World(
+            map_file=os.path.join('data', f"{get_config('MAP_FILE')}.txt"),
+            width=get_config('WORLD_WIDTH'),
+            height=get_config('WORLD_HEIGHT'),
+        )
         start_x, start_y = self.world.get_player_start_position()
         self.log(f"Стартовая позиция (центр тайла @): ({start_x}, {start_y})")
 
@@ -410,7 +414,11 @@ class Game:
         Та же логика, что и в quickload(), но без чтения файла.
         """
         if not self.player or not self.world:
-            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.world = World(
+            map_file=os.path.join('data', f"{get_config('MAP_FILE')}.txt"),
+            width=get_config('WORLD_WIDTH'),
+            height=get_config('WORLD_HEIGHT'),
+        )
             self.player = Player(0, 0)
         if not self.pickup_manager:
             self.pickup_manager = PickupManager()
@@ -734,7 +742,11 @@ class Game:
 
         # Создаём мир/игрока, если игра ещё не запущена
         if not self.player or not self.world:
-            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.world = World(
+            map_file=os.path.join('data', f"{get_config('MAP_FILE')}.txt"),
+            width=get_config('WORLD_WIDTH'),
+            height=get_config('WORLD_HEIGHT'),
+        )
             self.player = Player(0, 0)
         if not self.pickup_manager:
             self.pickup_manager = PickupManager()
