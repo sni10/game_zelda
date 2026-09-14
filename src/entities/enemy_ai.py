@@ -20,6 +20,24 @@ import random
 import math
 
 
+def _terrain_speed_modifier(enemy, world) -> float:
+    """Множитель скорости от рельефа под врагом (например, замедление в
+    зыбучих песках - см. TerrainTile.speed_modifier в src/world/terrain.py).
+
+    Дублирует логику Player.update (src/entities/player.py) - враги должны
+    вязнуть в песке точно так же, как игрок. get_terrain_at - не обязан
+    существовать на world (тесты используют лёгкие заглушки без него) -
+    тогда считаем модификатор нейтральным (1.0). Аналогично, если атрибут
+    speed_modifier на тайле оказался не числом (например, MagicMock в
+    тестах, не настроивший его) - тоже 1.0, а не падение с ошибкой."""
+    get_terrain_at = getattr(world, 'get_terrain_at', None) if world is not None else None
+    if get_terrain_at is None:
+        return 1.0
+    tile = get_terrain_at(enemy.x + enemy.rect.width / 2, enemy.y + enemy.rect.height / 2)
+    modifier = getattr(tile, 'speed_modifier', 1.0)
+    return modifier if isinstance(modifier, (int, float)) else 1.0
+
+
 class AIBehavior(ABC):
     """Базовая стратегия поведения врага."""
 
@@ -107,10 +125,11 @@ class PatrolBehavior(AIBehavior):
             enemy._patrol_timer = t
             return
 
-        # Двигаемся к цели с скоростью enemy.stats.speed.
+        # Двигаемся к цели с скоростью enemy.stats.speed, скорректированной
+        # рельефом под врагом (например, замедление в песке - как у игрока).
         # Поскольку target axial - один из dx/dy будет почти 0,
         # движение получится строго вдоль одной оси.
-        speed = enemy.stats.speed
+        speed = enemy.stats.speed * _terrain_speed_modifier(enemy, world)
         nx = dx / distance
         ny = dy / distance
 
@@ -188,14 +207,15 @@ class ChaseBehavior(AIBehavior):
 
     @staticmethod
     def _move_toward(enemy, tx, ty, dt, world):
-        """Двигаться к точке (tx, ty) со скоростью enemy.stats.speed."""
+        """Двигаться к точке (tx, ty) со скоростью enemy.stats.speed,
+        скорректированной рельефом под врагом (замедление в песке)."""
         dx = tx - enemy.x
         dy = ty - enemy.y
         dist = math.hypot(dx, dy)
         if dist < 2.0:
             return
 
-        speed = enemy.stats.speed
+        speed = enemy.stats.speed * _terrain_speed_modifier(enemy, world)
         nx = dx / dist
         ny = dy / dist
         new_x = enemy.x + nx * speed * dt
