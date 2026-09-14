@@ -10,10 +10,11 @@ EnemyFactory - реестр типов врагов + создание по type
 Если нужны "параметрические" типы (например, "boss_level_5"), фабрика
 поддерживает регистрацию любого callable, не только классов.
 """
+
 from typing import Callable, Dict
 import pygame
 
-from src.entities.enemy import Enemy, LightEnemy, HeavyEnemy, FastEnemy
+from src.entities.enemy import Enemy, LightEnemy, HeavyEnemy, FastEnemy, BossEnemy
 
 
 # Тип фабричной функции: (x, y, patrol_zone) -> Enemy
@@ -36,8 +37,9 @@ class EnemyFactory:
         cls._registry[type_id] = factory_func
 
     @classmethod
-    def create(cls, type_id: str, x: float, y: float,
-               patrol_zone: pygame.Rect) -> Enemy:
+    def create(
+        cls, type_id: str, x: float, y: float, patrol_zone: pygame.Rect
+    ) -> Enemy:
         """Создать врага указанного type_id."""
         if type_id not in cls._registry:
             raise UnknownEnemyTypeError(
@@ -63,4 +65,4 @@ class EnemyFactory:
 EnemyFactory.register(LightEnemy.TYPE_ID, LightEnemy.create)
 EnemyFactory.register(HeavyEnemy.TYPE_ID, HeavyEnemy.create)
 EnemyFactory.register(FastEnemy.TYPE_ID, FastEnemy.create)
-
+EnemyFactory.register(BossEnemy.TYPE_ID, BossEnemy.create)

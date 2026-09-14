@@ -16,6 +16,7 @@ import json
 import os
 from datetime import datetime
 
+from src.core.config_loader import get_config
 from src.entities.armor import ARMOR_CATALOG, create_armor
 from src.entities.weapons import WEAPON_CATALOG, create_weapon
 from src.entities.player_stats import unlocked_weapon_slots
@@ -278,7 +279,7 @@ class SaveSystem:
         идентификатор карты.
         """
         return {
-            "current_map": "main_world",
+            "current_map": get_config('MAP_FILE'),
             "discovered_areas": ["spawn"],
         }
 
@@ -378,7 +379,7 @@ class SaveSystem:
         """
         try:
             world_data = save_data.get("world") or {}
-            print(f"Мир восстановлен: {world_data.get('current_map', 'main_world')}")
+            print(f"Мир восстановлен: {world_data.get('current_map', get_config('MAP_FILE'))}")
         except Exception as e:
             print(f"Ошибка применения данных мира: {e}")
 

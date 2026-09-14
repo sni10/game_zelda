@@ -69,6 +69,12 @@ class ConfigLoader:
                 'WORLD_WIDTH': parser.getint('world', 'world_width'),
                 'WORLD_HEIGHT': parser.getint('world', 'world_height'),
                 'TILE_SIZE': parser.getint('world', 'tile_size'),
+                # Имя карты (без .txt) в data/ - опционально, дефолт main_world
+                # сохраняет обратную совместимость.
+                'MAP_FILE': (
+                    parser.get('world', 'map_file').strip()
+                    if parser.has_option('world', 'map_file') else 'main_world'
+                ),
                 
                 # Player settings
                 'PLAYER_SPEED': parser.getint('player', 'player_speed'),
@@ -199,6 +205,11 @@ class ConfigLoader:
         tile_size = parser.getint('world', 'tile_size')
         if tile_size <= 0:
             raise ConfigValidationError("tile_size must be a positive integer")
+
+        if parser.has_option('world', 'map_file'):
+            map_file = parser.get('world', 'map_file').strip()
+            if not map_file:
+                raise ConfigValidationError("map_file must not be empty")
     
     def _validate_player_settings(self, parser):
         """Validate player-related settings"""

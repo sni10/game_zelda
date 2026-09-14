@@ -9,6 +9,7 @@ EnemyManager - управление всеми врагами в мире.
 - Удаление мёртвых врагов
 - Отрисовка всех видимых врагов
 """
+
 import math
 import random
 from typing import List, Tuple
@@ -46,18 +47,29 @@ class EnemyManager:
     def _make_patrol_zone(self, cx: float, cy: float) -> pygame.Rect:
         """Построить квадрат патрулирования (radius_tiles*2 x radius_tiles*2)
         вокруг точки (cx, cy)."""
-        radius = get_config('ENEMIES_PATROL_RADIUS_TILES') * self.TILE_SIZE
+        radius = get_config("ENEMIES_PATROL_RADIUS_TILES") * self.TILE_SIZE
         return pygame.Rect(
-            int(cx - radius), int(cy - radius),
-            radius * 2, radius * 2,
+            int(cx - radius),
+            int(cy - radius),
+            radius * 2,
+            radius * 2,
         )
 
-    def _is_valid_spawn_point(self, x: float, y: float, size: int,
-                              player_x: float, player_y: float,
-                              min_distance: float) -> bool:
+    def _is_valid_spawn_point(
+        self,
+        x: float,
+        y: float,
+        size: int,
+        player_x: float,
+        player_y: float,
+        min_distance: float,
+    ) -> bool:
         """Проверить что точка спавна:
         - в пределах мира
         - проходима (не пересекает obstacles)
+        - достижима пешком от игрока (не изолированный карман ландшафта -
+          иначе враг не может ни дойти до игрока, ни быть атакован, и
+          выглядит "застрявшим")
         - дальше min_distance от игрока (вне зоны видимости)
         """
         # В мире
@@ -68,6 +80,13 @@ class EnemyManager:
         # Не на препятствии
         candidate = pygame.Rect(int(x), int(y), size, size)
         if self.world.check_collision(candidate):
+            return False
+        # Достижимость (опциональная возможность world - не все тестовые
+        # моки мира её реализуют, тогда ограничение просто не применяется)
+        is_reachable = getattr(self.world, "is_position_reachable", None)
+        if is_reachable is not None and not is_reachable(
+            candidate.centerx, candidate.centery
+        ):
             return False
         # Дальше игрока на min_distance
         dx = x - player_x
@@ -83,12 +102,12 @@ class EnemyManager:
         # Размер врага нужен заранее для проверки коллизий - создаём
         # временный Enemy чтобы прочитать размер из его статов.
         # Cheaper: используем константный максимум size из конфига.
-        size_key = f'ENEMIES_{type_id.upper()}_SIZE'
+        size_key = f"ENEMIES_{type_id.upper()}_SIZE"
         size = get_config(size_key)
 
-        min_distance = get_config('ENEMIES_SPAWN_MIN_DISTANCE')
-        max_attempts = get_config('ENEMIES_SPAWN_MAX_ATTEMPTS')
-        radius_px = get_config('ENEMIES_PATROL_RADIUS_TILES') * self.TILE_SIZE
+        min_distance = get_config("ENEMIES_SPAWN_MIN_DISTANCE")
+        max_attempts = get_config("ENEMIES_SPAWN_MAX_ATTEMPTS")
+        radius_px = get_config("ENEMIES_PATROL_RADIUS_TILES") * self.TILE_SIZE
 
         for _ in range(max_attempts):
             x = random.uniform(radius_px, self.world.width - radius_px - size)
@@ -111,9 +130,9 @@ class EnemyManager:
         Запоминает целевые количества для последующего авто-респавна.
         """
         targets = {
-            'light': get_config('ENEMIES_INITIAL_COUNT_LIGHT'),
-            'heavy': get_config('ENEMIES_INITIAL_COUNT_HEAVY'),
-            'fast':  get_config('ENEMIES_INITIAL_COUNT_FAST'),
+            "light": get_config("ENEMIES_INITIAL_COUNT_LIGHT"),
+            "heavy": get_config("ENEMIES_INITIAL_COUNT_HEAVY"),
+            "fast": get_config("ENEMIES_INITIAL_COUNT_FAST"),
         }
         # Сохраняем для респавна
         self.target_counts = dict(targets)
@@ -163,8 +182,9 @@ class EnemyManager:
                 dx = (a.x + a.rect.width / 2) - (b.x + b.rect.width / 2)
                 dy = (a.y + a.rect.height / 2) - (b.y + b.rect.height / 2)
                 dist = math.hypot(dx, dy) or 1.0
-                min_dist = ((a.rect.width + b.rect.width) / 4
-                            + (a.rect.height + b.rect.height) / 4)
+                min_dist = (a.rect.width + b.rect.width) / 4 + (
+                    a.rect.height + b.rect.height
+                ) / 4
                 overlap = min_dist - dist
                 if overlap <= 0:
                     continue
@@ -179,8 +199,9 @@ class EnemyManager:
 
     # --- Обновление --------------------------------------------------------
 
-    def update(self, dt: float, player_x: float = None, player_y: float = None,
-               player=None) -> None:
+    def update(
+        self, dt: float, player_x: float = None, player_y: float = None, player=None
+    ) -> None:
         """Обновить AI всех живых врагов и удалить мёртвых.
 
         Если переданы координаты игрока - также периодически пытаемся
@@ -206,18 +227,21 @@ class EnemyManager:
             if self._respawn_timer <= 0:
                 # Сброс таймера ДО спавна (не зациклиться даже если нет места)
                 try:
-                    self._respawn_timer = float(get_config('ENEMIES_RESPAWN_INTERVAL'))
+                    self._respawn_timer = float(get_config("ENEMIES_RESPAWN_INTERVAL"))
                 except KeyError:
                     self._respawn_timer = 5.0  # default
                 self._try_respawn_missing(player_x, player_y)
 
     # --- Урон от атаки игрока ---------------------------------------------
 
-    def apply_player_attack(self, attack_id: int,
-                            attack_rects: List[pygame.Rect],
-                            damage: int,
-                            player=None,
-                            is_melee: bool = False) -> Tuple[int, int]:
+    def apply_player_attack(
+        self,
+        attack_id: int,
+        attack_rects: List[pygame.Rect],
+        damage: int,
+        player=None,
+        is_melee: bool = False,
+    ) -> Tuple[int, int]:
         """Нанести урон врагам, которых задевают зоны атаки.
 
         attack_id - уникальный идентификатор текущей атаки игрока,
@@ -234,8 +258,8 @@ class EnemyManager:
 
         hits = 0
         kills = 0
-        kb_speed = get_config('COMBAT_ENEMY_KNOCKBACK_SPEED', 180)
-        kb_dur = get_config('COMBAT_ENEMY_KNOCKBACK_DURATION', 0.12)
+        kb_speed = get_config("COMBAT_ENEMY_KNOCKBACK_SPEED", 180)
+        kb_dur = get_config("COMBAT_ENEMY_KNOCKBACK_DURATION", 0.12)
 
         for enemy in self.enemies:
             if enemy.is_dead():
@@ -282,9 +306,9 @@ class EnemyManager:
         if player.is_invulnerable:
             return 0
 
-        atk_cd = get_config('COMBAT_ENEMY_ATTACK_COOLDOWN', 1.2)
-        retreat_speed = get_config('COMBAT_ENEMY_RETREAT_SPEED', 150)
-        retreat_dur = get_config('COMBAT_ENEMY_RETREAT_DURATION', 0.2)
+        atk_cd = get_config("COMBAT_ENEMY_ATTACK_COOLDOWN", 1.2)
+        retreat_speed = get_config("COMBAT_ENEMY_RETREAT_SPEED", 150)
+        retreat_dur = get_config("COMBAT_ENEMY_RETREAT_DURATION", 0.2)
 
         total_damage = 0
         for enemy in self.enemies:
@@ -332,7 +356,7 @@ class EnemyManager:
             if not enemy.is_dead():
                 continue
             # Уже дропнули? (помечаем атрибутом чтобы не дублировать)
-            if getattr(enemy, '_loot_dropped', False):
+            if getattr(enemy, "_loot_dropped", False):
                 continue
             enemy._loot_dropped = True
             self._spawn_drops_for(enemy, player)
@@ -352,59 +376,64 @@ class EnemyManager:
         # количество, не шанс дропа). См. config.ini [progression]
         # melee_kill_bonus_multiplier.
         bonus_mult = (
-            get_config('PROGRESSION_MELEE_KILL_BONUS_MULTIPLIER', 1.0)
-            if getattr(enemy, '_hit_by_melee', False) else 1.0
+            get_config("PROGRESSION_MELEE_KILL_BONUS_MULTIPLIER", 1.0)
+            if getattr(enemy, "_hit_by_melee", False)
+            else 1.0
         )
 
         # XP — всегда (фиксированное количество, с бонусом ближнего боя).
         # ceil (не round) - чтобы бонус всегда был виден хотя бы на 1 единицу,
         # а не терялся округлением на маленьких значениях (1-2 ед.).
-        xp_amount = int(math.ceil(get_config(f'DROPS_{prefix.upper()}_XP_AMOUNT', 0) * bonus_mult))
+        xp_amount = int(
+            math.ceil(get_config(f"DROPS_{prefix.upper()}_XP_AMOUNT", 0) * bonus_mult)
+        )
         if xp_amount > 0:
             self.pickup_manager.spawn(
-                XPOrbPickup(cx + random.uniform(-8, 8),
-                            cy + random.uniform(-8, 8),
-                            amount=xp_amount)
+                XPOrbPickup(
+                    cx + random.uniform(-8, 8),
+                    cy + random.uniform(-8, 8),
+                    amount=xp_amount,
+                )
             )
 
         # Определяем что дропать: сердечки или монеты
-        player_needs_heal = (
-            player is not None
-            and player.health < player.max_health
-        )
+        player_needs_heal = player is not None and player.health < player.max_health
 
         if player_needs_heal:
             # Сердечко — шанс (только при неполном HP)
-            heart_chance = get_config(f'DROPS_{prefix.upper()}_HEART_CHANCE', 0.0)
+            heart_chance = get_config(f"DROPS_{prefix.upper()}_HEART_CHANCE", 0.0)
             if random.random() < heart_chance:
                 self.pickup_manager.spawn(
-                    HeartPickup(cx + random.uniform(-8, 8),
-                                cy + random.uniform(-8, 8))
+                    HeartPickup(cx + random.uniform(-8, 8), cy + random.uniform(-8, 8))
                 )
         else:
             # Монеты — шанс + случайное количество (только при полном HP)
-            coin_chance = get_config(f'DROPS_{prefix.upper()}_COIN_CHANCE', 0.0)
+            coin_chance = get_config(f"DROPS_{prefix.upper()}_COIN_CHANCE", 0.0)
             if random.random() < coin_chance:
-                coin_min = get_config(f'DROPS_{prefix.upper()}_COIN_MIN', 1)
-                coin_max = get_config(f'DROPS_{prefix.upper()}_COIN_MAX', 1)
+                coin_min = get_config(f"DROPS_{prefix.upper()}_COIN_MIN", 1)
+                coin_max = get_config(f"DROPS_{prefix.upper()}_COIN_MAX", 1)
                 count = int(math.ceil(random.randint(coin_min, coin_max) * bonus_mult))
                 for _ in range(count):
                     self.pickup_manager.spawn(
-                        CoinPickup(cx + random.uniform(-12, 12),
-                                   cy + random.uniform(-12, 12))
+                        CoinPickup(
+                            cx + random.uniform(-12, 12), cy + random.uniform(-12, 12)
+                        )
                     )
 
         # Патроны — независимый шанс (не завязан на heal/coin ветвление,
         # как XP выше). Без бонуса ближнего боя - не в тему бонуса.
-        ammo_chance = get_config(f'DROPS_{prefix.upper()}_AMMO_CHANCE', 0.0)
+        ammo_chance = get_config(f"DROPS_{prefix.upper()}_AMMO_CHANCE", 0.0)
         if random.random() < ammo_chance:
-            ammo_min = get_config(f'DROPS_{prefix.upper()}_AMMO_MIN', 1)
-            ammo_max = get_config(f'DROPS_{prefix.upper()}_AMMO_MAX', 1)
+            ammo_min = get_config(f"DROPS_{prefix.upper()}_AMMO_MIN", 1)
+            ammo_max = get_config(f"DROPS_{prefix.upper()}_AMMO_MAX", 1)
             amount = random.randint(ammo_min, ammo_max)
             self.pickup_manager.spawn(
-                AmmoPickup(cx + random.uniform(-10, 10),
-                           cy + random.uniform(-10, 10),
-                           ammo_type="bullets", amount=amount)
+                AmmoPickup(
+                    cx + random.uniform(-10, 10),
+                    cy + random.uniform(-10, 10),
+                    ammo_type="bullets",
+                    amount=amount,
+                )
             )
 
     # --- Утилиты -----------------------------------------------------------
@@ -421,6 +450,15 @@ class EnemyManager:
                 result[tid] = result.get(tid, 0) + 1
         return result
 
+    def boss_alive(self) -> bool:
+        """Жив ли хоть один враг с флагом is_boss (см. CAMPAIGN_PLAN.md ->
+        DefeatBossObjective). Мёртвые, но ещё не удалённые из self.enemies
+        в этот же кадр (прунинг - в начале следующего update()) учтены
+        через is_dead(), а не через сам факт присутствия в списке."""
+        return any(
+            getattr(e, "is_boss", False) and not e.is_dead() for e in self.enemies
+        )
+
     # --- Сериализация ------------------------------------------------------
 
     def serialize(self) -> dict:
@@ -429,13 +467,15 @@ class EnemyManager:
         for e in self.enemies:
             if e.is_dead():
                 continue
-            enemies_data.append({
-                "type": e.stats.name.lower(),  # 'light' / 'heavy' / 'fast'
-                "x": float(e.x),
-                "y": float(e.y),
-                "health": int(e.health),
-                "attack_cooldown_timer": float(e.attack_cooldown_timer),
-            })
+            enemies_data.append(
+                {
+                    "type": e.stats.name.lower(),  # 'light' / 'heavy' / 'fast'
+                    "x": float(e.x),
+                    "y": float(e.y),
+                    "health": int(e.health),
+                    "attack_cooldown_timer": float(e.attack_cooldown_timer),
+                }
+            )
         return {
             "enemies": enemies_data,
             "target_counts": dict(self.target_counts),
@@ -463,4 +503,3 @@ class EnemyManager:
             self.enemies.append(enemy)
         self.target_counts = dict(data.get("target_counts", {}))
         self._respawn_timer = float(data.get("respawn_timer", 0.0))
-

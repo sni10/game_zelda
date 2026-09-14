@@ -15,9 +15,32 @@ MVP-стратегии:
 - FleeBehavior     - убегает при низком HP
 - RangedBehavior   - стреляет с дистанции
 """
+
 from abc import ABC, abstractmethod
 import random
 import math
+
+
+def _terrain_speed_modifier(enemy, world) -> float:
+    """Множитель скорости от рельефа под врагом (например, замедление в
+    зыбучих песках - см. TerrainTile.speed_modifier в src/world/terrain.py).
+
+    Дублирует логику Player.update (src/entities/player.py) - враги должны
+    вязнуть в песке точно так же, как игрок. get_terrain_at - не обязан
+    существовать на world (тесты используют лёгкие заглушки без него) -
+    тогда считаем модификатор нейтральным (1.0). Аналогично, если атрибут
+    speed_modifier на тайле оказался не числом (например, MagicMock в
+    тестах, не настроивший его) - тоже 1.0, а не падение с ошибкой."""
+    get_terrain_at = (
+        getattr(world, "get_terrain_at", None) if world is not None else None
+    )
+    if get_terrain_at is None:
+        return 1.0
+    tile = get_terrain_at(
+        enemy.x + enemy.rect.width / 2, enemy.y + enemy.rect.height / 2
+    )
+    modifier = getattr(tile, "speed_modifier", 1.0)
+    return modifier if isinstance(modifier, (int, float)) else 1.0
 
 
 class AIBehavior(ABC):
@@ -55,7 +78,7 @@ class PatrolBehavior(AIBehavior):
 
     # Время до выбора новой цели если враг застрял или цель достигнута
     DEFAULT_REPATH_INTERVAL = 2.0  # секунды
-    REACH_THRESHOLD = 4.0          # px до цели = "достиг"
+    REACH_THRESHOLD = 4.0  # px до цели = "достиг"
 
     def __init__(self, repath_interval: float = DEFAULT_REPATH_INTERVAL):
         self.repath_interval = repath_interval
@@ -74,7 +97,9 @@ class PatrolBehavior(AIBehavior):
         if random.random() < 0.5:
             # Горизонталь: меняем X, Y оставляем (округлённый до int чтобы
             # не было микро-дрожаний)
-            target_x = random.randint(zone.left, max_x) if max_x > zone.left else zone.left
+            target_x = (
+                random.randint(zone.left, max_x) if max_x > zone.left else zone.left
+            )
             target_y = enemy.y
         else:
             # Вертикаль: меняем Y, X оставляем
@@ -86,7 +111,7 @@ class PatrolBehavior(AIBehavior):
 
     def _ensure_target(self, enemy):
         """Лениво создаём цель если её ещё нет (после spawn)."""
-        if not hasattr(enemy, '_patrol_target'):
+        if not hasattr(enemy, "_patrol_target"):
             tx, ty, t = self._pick_target(enemy)
             enemy._patrol_target = (tx, ty)
             enemy._patrol_timer = t
@@ -107,10 +132,11 @@ class PatrolBehavior(AIBehavior):
             enemy._patrol_timer = t
             return
 
-        # Двигаемся к цели с скоростью enemy.stats.speed.
+        # Двигаемся к цели с скоростью enemy.stats.speed, скорректированной
+        # рельефом под врагом (например, замедление в песке - как у игрока).
         # Поскольку target axial - один из dx/dy будет почти 0,
         # движение получится строго вдоль одной оси.
-        speed = enemy.stats.speed
+        speed = enemy.stats.speed * _terrain_speed_modifier(enemy, world)
         nx = dx / distance
         ny = dy / distance
 
@@ -124,8 +150,10 @@ class PatrolBehavior(AIBehavior):
 
         # Проверка коллизии с террейном - если упёрлись, перевыбираем цель
         import pygame
-        candidate = pygame.Rect(int(new_x), int(new_y),
-                                enemy.rect.width, enemy.rect.height)
+
+        candidate = pygame.Rect(
+            int(new_x), int(new_y), enemy.rect.width, enemy.rect.height
+        )
         if world is not None and world.check_collision(candidate):
             tx, ty, t = self._pick_target(enemy)
             enemy._patrol_target = (tx, ty)
@@ -149,8 +177,12 @@ class ChaseBehavior(AIBehavior):
     Коллизии уважаются: враг не проходит сквозь стены.
     """
 
-    def __init__(self, chase_radius: float, lose_radius: float,
-                 patrol_fallback: PatrolBehavior = None):
+    def __init__(
+        self,
+        chase_radius: float,
+        lose_radius: float,
+        patrol_fallback: PatrolBehavior = None,
+    ):
         self.chase_radius = chase_radius
         self.lose_radius = lose_radius
         self._patrol = patrol_fallback or PatrolBehavior()
@@ -169,8 +201,8 @@ class ChaseBehavior(AIBehavior):
                 # Потеряли — возврат к патрулю
                 self._chasing = False
                 # Сброс patrol-цели для плавного перехода
-                if hasattr(enemy, '_patrol_target'):
-                    delattr(enemy, '_patrol_target')
+                if hasattr(enemy, "_patrol_target"):
+                    delattr(enemy, "_patrol_target")
                 self._patrol.update(enemy, dt, world, player)
                 return
             # Продолжаем преследование
@@ -188,14 +220,15 @@ class ChaseBehavior(AIBehavior):
 
     @staticmethod
     def _move_toward(enemy, tx, ty, dt, world):
-        """Двигаться к точке (tx, ty) со скоростью enemy.stats.speed."""
+        """Двигаться к точке (tx, ty) со скоростью enemy.stats.speed,
+        скорректированной рельефом под врагом (замедление в песке)."""
         dx = tx - enemy.x
         dy = ty - enemy.y
         dist = math.hypot(dx, dy)
         if dist < 2.0:
             return
 
-        speed = enemy.stats.speed
+        speed = enemy.stats.speed * _terrain_speed_modifier(enemy, world)
         nx = dx / dist
         ny = dy / dist
         new_x = enemy.x + nx * speed * dt
@@ -207,14 +240,16 @@ class ChaseBehavior(AIBehavior):
         # иначе враг замирает, стоит взгляду отклониться от перпендикуляра
         # к препятствию хоть на долю градуса, вместо обхода вдоль него.
         if world is not None:
-            candidate_x = pygame.Rect(int(new_x), int(enemy.y),
-                                      enemy.rect.width, enemy.rect.height)
+            candidate_x = pygame.Rect(
+                int(new_x), int(enemy.y), enemy.rect.width, enemy.rect.height
+            )
             if not world.check_collision(candidate_x):
                 enemy.x = new_x
                 enemy.rect.x = int(new_x)
 
-            candidate_y = pygame.Rect(int(enemy.x), int(new_y),
-                                      enemy.rect.width, enemy.rect.height)
+            candidate_y = pygame.Rect(
+                int(enemy.x), int(new_y), enemy.rect.width, enemy.rect.height
+            )
             if not world.check_collision(candidate_y):
                 enemy.y = new_y
                 enemy.rect.y = int(new_y)
@@ -223,5 +258,3 @@ class ChaseBehavior(AIBehavior):
             enemy.y = new_y
             enemy.rect.x = int(new_x)
             enemy.rect.y = int(new_y)
-
-

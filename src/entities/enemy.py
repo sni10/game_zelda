@@ -9,14 +9,18 @@
 - Каждый враг имеет patrol_zone (pygame.Rect) - замкнутая область
   патрулирования. Поведение уважает зону.
 """
+
 from dataclasses import dataclass
 from typing import Tuple
 import pygame
 from src.core.config_loader import get_config
 from src.entities.enemy_ai import AIBehavior, PatrolBehavior, ChaseBehavior
+
+
 @dataclass
 class EnemyStats:
     """Статы одного типа врага. Берутся из config.ini."""
+
     name: str
     max_health: int
     speed: float
@@ -30,16 +34,29 @@ class EnemyStats:
     shield_max_hits: int = 0
     # Таймаут простоя (без урона от игрока) до полного восстановления щита.
     shield_regen_timeout: float = 5.0
+
+
 class Enemy:
     """Базовый враг с HP, AI и базовой отрисовкой."""
-    def __init__(self, x, y, stats: EnemyStats, ai: AIBehavior,
-                 patrol_zone: pygame.Rect):
+
+    def __init__(
+        self,
+        x,
+        y,
+        stats: EnemyStats,
+        ai: AIBehavior,
+        patrol_zone: pygame.Rect,
+        is_boss: bool = False,
+    ):
         self.x = float(x)
         self.y = float(y)
         self.stats = stats
         self.ai = ai
         self.patrol_zone = patrol_zone
         self.health = stats.max_health
+        # Кампания миссий (см. CAMPAIGN_PLAN.md) - DefeatBossObjective
+        # отслеживает именно этого врага, не общее число живых.
+        self.is_boss = is_boss
         # Энергощит (issue #63) - см. EnemyStats.shield_max_hits.
         self.shield_hits_remaining = stats.shield_max_hits
         self._shield_regen_timer = 0.0
@@ -59,6 +76,7 @@ class Enemy:
         self.attack_cooldown_timer = 0.0
         # Флаг: враг вплотную к игроку (позиция откачена из-за коллизии)
         self.touching_player = False
+
     def take_damage(self, amount: int) -> None:
         self.last_hit_time = pygame.time.get_ticks()
         self._shield_regen_timer = 0.0
@@ -67,8 +85,10 @@ class Enemy:
             self.shield_hits_remaining -= 1
             return
         self.health = max(0, self.health - amount)
+
     def is_dead(self) -> bool:
         return self.health <= 0
+
     def update(self, dt: float, world, player=None) -> None:
         if self.is_dead():
             return
@@ -86,9 +106,11 @@ class Enemy:
             new_x = self.x + self.knockback_vx * dt
             new_y = self.y + self.knockback_vy * dt
             import pygame as _pg
-            candidate = _pg.Rect(int(new_x), int(new_y),
-                                 self.rect.width, self.rect.height)
-            blocked = (world is not None and world.check_collision(candidate))
+
+            candidate = _pg.Rect(
+                int(new_x), int(new_y), self.rect.width, self.rect.height
+            )
+            blocked = world is not None and world.check_collision(candidate)
             if not blocked and player is not None:
                 blocked = candidate.colliderect(player.rect)
             if not blocked:
@@ -128,14 +150,19 @@ class Enemy:
             self.y += overlap_y if ey >= py else -overlap_y
         self.rect.x = int(self.x)
         self.rect.y = int(self.y)
+
     def draw(self, screen, camera_x, camera_y) -> None:
         if self.is_dead():
             return
         sx = int(self.x - camera_x)
         sy = int(self.y - camera_y)
         # Frustum cull
-        if (sx + self.stats.width < 0 or sy + self.stats.height < 0 or
-                sx > screen.get_width() or sy > screen.get_height()):
+        if (
+            sx + self.stats.width < 0
+            or sy + self.stats.height < 0
+            or sx > screen.get_width()
+            or sy > screen.get_height()
+        ):
             return
         # Flash при попадании
         now = pygame.time.get_ticks()
@@ -143,9 +170,9 @@ class Enemy:
             color = (255, 255, 255)
         else:
             color = self.stats.color
-        pygame.draw.rect(screen, color,
-                         (sx, sy, self.stats.width, self.stats.height))
+        pygame.draw.rect(screen, color, (sx, sy, self.stats.width, self.stats.height))
         self._draw_status_bars(screen, sx, sy)
+
     def _draw_status_bars(self, screen, sx, sy) -> None:
         """HP-бар (красный/зелёный) всегда виден для всех типов врагов -
         раньше рисовался только при health < max_health, из-за чего у
@@ -158,73 +185,133 @@ class Enemy:
         pygame.draw.rect(screen, (40, 40, 40), (sx, hp_bar_y, bar_w, bar_h))
         fill_w = int(bar_w * self.health / self.stats.max_health)
         if fill_w > 0:
-            pygame.draw.rect(screen, (60, 200, 60),
-                             (sx, hp_bar_y, fill_w, bar_h))
+            pygame.draw.rect(screen, (60, 200, 60), (sx, hp_bar_y, fill_w, bar_h))
         if self.stats.shield_max_hits > 0:
             shield_bar_y = hp_bar_y - bar_h - gap
-            pygame.draw.rect(screen, (40, 40, 40),
-                             (sx, shield_bar_y, bar_w, bar_h))
+            pygame.draw.rect(screen, (40, 40, 40), (sx, shield_bar_y, bar_w, bar_h))
             shield_fill_w = int(
                 bar_w * self.shield_hits_remaining / self.stats.shield_max_hits
             )
             if shield_fill_w > 0:
-                pygame.draw.rect(screen, (60, 140, 255),
-                                 (sx, shield_bar_y, shield_fill_w, bar_h))
+                pygame.draw.rect(
+                    screen, (60, 140, 255), (sx, shield_bar_y, shield_fill_w, bar_h)
+                )
+
     def __repr__(self):
-        return (f"{self.__class__.__name__}"
-                f"(name={self.stats.name}, hp={self.health}/{self.stats.max_health}, "
-                f"pos=({int(self.x)}, {int(self.y)}))")
+        return (
+            f"{self.__class__.__name__}"
+            f"(name={self.stats.name}, hp={self.health}/{self.stats.max_health}, "
+            f"pos=({int(self.x)}, {int(self.y)}))"
+        )
+
+
 def _stats_from_config(prefix: str, name: str) -> EnemyStats:
     """Прочитать EnemyStats из секции [enemies] config.ini."""
     return EnemyStats(
         name=name,
-        max_health=get_config(f'ENEMIES_{prefix}_MAX_HEALTH'),
-        speed=float(get_config(f'ENEMIES_{prefix}_SPEED')),
-        width=get_config(f'ENEMIES_{prefix}_SIZE'),
-        height=get_config(f'ENEMIES_{prefix}_SIZE'),
-        color=get_config(f'ENEMIES_{prefix}_COLOR'),
-        damage=get_config(f'ENEMIES_{prefix}_DAMAGE'),
-        shield_max_hits=get_config(f'ENEMIES_{prefix}_SHIELD_HITS', 0),
-        shield_regen_timeout=get_config(
-            'ENEMIES_SHIELD_REGEN_TIMEOUT_SECONDS', 5.0
-        ),
+        max_health=get_config(f"ENEMIES_{prefix}_MAX_HEALTH"),
+        speed=float(get_config(f"ENEMIES_{prefix}_SPEED")),
+        width=get_config(f"ENEMIES_{prefix}_SIZE"),
+        height=get_config(f"ENEMIES_{prefix}_SIZE"),
+        color=get_config(f"ENEMIES_{prefix}_COLOR"),
+        damage=get_config(f"ENEMIES_{prefix}_DAMAGE"),
+        shield_max_hits=get_config(f"ENEMIES_{prefix}_SHIELD_HITS", 0),
+        shield_regen_timeout=get_config("ENEMIES_SHIELD_REGEN_TIMEOUT_SECONDS", 5.0),
     )
+
+
 class LightEnemy(Enemy):
     """Лёгкий враг: малый, средний по скорости, 1 HP."""
-    TYPE_ID = 'light'
+
+    TYPE_ID = "light"
+
     @classmethod
-    def create(cls, x, y, patrol_zone) -> 'LightEnemy':
-        chase_r = get_config('ENEMIES_LIGHT_CHASE_RADIUS', 120)
-        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
-        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
-                           patrol_fallback=PatrolBehavior())
-        return cls(x, y,
-                   stats=_stats_from_config('LIGHT', 'Light'),
-                   ai=ai,
-                   patrol_zone=patrol_zone)
+    def create(cls, x, y, patrol_zone) -> "LightEnemy":
+        chase_r = get_config("ENEMIES_LIGHT_CHASE_RADIUS", 120)
+        lose_r = get_config("ENEMIES_CHASE_LOSE_RADIUS", 280)
+        ai = ChaseBehavior(
+            chase_radius=chase_r, lose_radius=lose_r, patrol_fallback=PatrolBehavior()
+        )
+        return cls(
+            x,
+            y,
+            stats=_stats_from_config("LIGHT", "Light"),
+            ai=ai,
+            patrol_zone=patrol_zone,
+        )
+
+
 class HeavyEnemy(Enemy):
     """Тяжёлый враг: большой, медленный, 3 HP."""
-    TYPE_ID = 'heavy'
+
+    TYPE_ID = "heavy"
+
     @classmethod
-    def create(cls, x, y, patrol_zone) -> 'HeavyEnemy':
-        chase_r = get_config('ENEMIES_HEAVY_CHASE_RADIUS', 100)
-        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
-        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
-                           patrol_fallback=PatrolBehavior(repath_interval=3.0))
-        return cls(x, y,
-                   stats=_stats_from_config('HEAVY', 'Heavy'),
-                   ai=ai,
-                   patrol_zone=patrol_zone)
+    def create(cls, x, y, patrol_zone) -> "HeavyEnemy":
+        chase_r = get_config("ENEMIES_HEAVY_CHASE_RADIUS", 100)
+        lose_r = get_config("ENEMIES_CHASE_LOSE_RADIUS", 280)
+        ai = ChaseBehavior(
+            chase_radius=chase_r,
+            lose_radius=lose_r,
+            patrol_fallback=PatrolBehavior(repath_interval=3.0),
+        )
+        return cls(
+            x,
+            y,
+            stats=_stats_from_config("HEAVY", "Heavy"),
+            ai=ai,
+            patrol_zone=patrol_zone,
+        )
+
+
 class FastEnemy(Enemy):
     """Быстрый враг: маленький, очень быстрый, 1 HP."""
-    TYPE_ID = 'fast'
+
+    TYPE_ID = "fast"
+
     @classmethod
-    def create(cls, x, y, patrol_zone) -> 'FastEnemy':
-        chase_r = get_config('ENEMIES_FAST_CHASE_RADIUS', 180)
-        lose_r = get_config('ENEMIES_CHASE_LOSE_RADIUS', 280)
-        ai = ChaseBehavior(chase_radius=chase_r, lose_radius=lose_r,
-                           patrol_fallback=PatrolBehavior(repath_interval=1.2))
-        return cls(x, y,
-                   stats=_stats_from_config('FAST', 'Fast'),
-                   ai=ai,
-                   patrol_zone=patrol_zone)
+    def create(cls, x, y, patrol_zone) -> "FastEnemy":
+        chase_r = get_config("ENEMIES_FAST_CHASE_RADIUS", 180)
+        lose_r = get_config("ENEMIES_CHASE_LOSE_RADIUS", 280)
+        ai = ChaseBehavior(
+            chase_radius=chase_r,
+            lose_radius=lose_r,
+            patrol_fallback=PatrolBehavior(repath_interval=1.2),
+        )
+        return cls(
+            x,
+            y,
+            stats=_stats_from_config("FAST", "Fast"),
+            ai=ai,
+            patrol_zone=patrol_zone,
+        )
+
+
+class BossEnemy(Enemy):
+    """Босс миссии: крупный, медленный, тройной энергощит поверх высокого HP.
+
+    Архитектурно - тот же профиль статов, что Heavy (см. CAMPAIGN_PLAN.md:
+    щит уже реализован и проверен на Heavy, боссу не нужна новая система,
+    только более высокие статы + флаг is_boss для DefeatBossObjective).
+    Не спавнится через initial_count_* / auto-респавн EnemyManager - только
+    точечно, одним вызовом spawn_enemy('boss', ...) при старте миссии."""
+
+    TYPE_ID = "boss"
+
+    @classmethod
+    def create(cls, x, y, patrol_zone) -> "BossEnemy":
+        chase_r = get_config("ENEMIES_BOSS_CHASE_RADIUS", 320)
+        lose_r = get_config("ENEMIES_BOSS_LOSE_RADIUS", 500)
+        ai = ChaseBehavior(
+            chase_radius=chase_r,
+            lose_radius=lose_r,
+            patrol_fallback=PatrolBehavior(repath_interval=3.0),
+        )
+        return cls(
+            x,
+            y,
+            stats=_stats_from_config("BOSS", "Boss"),
+            ai=ai,
+            patrol_zone=patrol_zone,
+            is_boss=True,
+        )

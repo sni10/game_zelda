@@ -1,11 +1,13 @@
 """
 Game - основной класс игрового цикла.
 
-Простая single-world игра в стиле Zelda. Без мульти-миров, ECS,
-порталов и подземных Z-переходов - всё это было оверинжинирингом
-для текущего этапа разработки. При необходимости вернётся отдельной
-веткой когда базовые механики (комбат, враги, инвентарь) будут готовы.
+Мир остаётся "один за раз" (без мульти-миров/ECS/порталов/Z-переходов -
+см. ADR 2026-04-26 в DESIGN.md). Поверх него - кампания из последовательных
+миссий-карт (см. CAMPAIGN_PLAN.md, issue #68): Game.campaign знает список
+Mission, Game._load_mission() пересобирает world/расположение игрока под
+текущую миссию, а сам мир как был один активный объект - так и остался.
 """
+
 import pygame
 import sys
 import os
@@ -19,6 +21,8 @@ from src.ui.game_over import GameOverScreen
 from src.ui.hud import HUD
 from src.ui.save_load_menu import SaveLoadMenu
 from src.ui.inventory_screen import InventoryScreen
+from src.ui.map_transition import MapTransition
+from src.ui.mission_screens import MissionCompleteScreen, CampaignCompleteScreen
 from src.utils.debug import debug
 from src.utils.session_logger import SessionLogger
 from src.entities.player import Player
@@ -27,6 +31,7 @@ from src.entities.weapons import pellet_directions
 from src.world.world import World
 from src.systems.save_system import SaveSystem
 from src.systems.pickup_manager import PickupManager
+from src.systems.mission import Campaign, build_dev_campaign
 
 
 # Размер игрока (32x32) - используется для центрирования в стартовом тайле.
@@ -44,7 +49,7 @@ class Game:
         # Инициализация Pygame
         pygame.init()
         self.screen = pygame.display.set_mode(
-            (get_config('WIDTH'), get_config('HEIGHT'))
+            (get_config("WIDTH"), get_config("HEIGHT"))
         )
         pygame.display.set_caption("Zelda-like Game")
         self.clock = pygame.time.Clock()
@@ -96,6 +101,15 @@ class Game:
         # переменной не нужно - закрытие всегда ведёт обратно в PLAYING.
         self.inventory_screen: InventoryScreen = None
 
+        # Кампания миссий (см. CAMPAIGN_PLAN.md, issue #68). None вне
+        # активной кампании (например игра загружена через quickload без
+        # start_new_game в этой сессии) - update() тогда просто не проверяет
+        # цель миссии, старое поведение "открытого мира" не ломается.
+        self.campaign: Campaign = None
+        self.map_transition = MapTransition()
+        self.mission_complete_screen: MissionCompleteScreen = None
+        self.campaign_complete_screen: CampaignCompleteScreen = None
+
     # --- Логирование -------------------------------------------------------
 
     def log(self, message, level="INFO"):
@@ -105,33 +119,93 @@ class Game:
     # --- Жизненный цикл игры ----------------------------------------------
 
     def start_new_game(self):
-        """Начать новую игру: создать мир, игрока, статистику."""
-        self.log("=== ЗАПУСК НОВОЙ ИГРЫ ===", "IMPORTANT")
+        """Начать новую игру: собрать кампанию миссий, создать мир первой
+        миссии, игрока, статистику на весь ран."""
+        self.log("=== ЗАПУСК НОВОЙ ИГРЫ (КАМПАНИЯ) ===", "IMPORTANT")
 
-        # Загружаем основной (и единственный) мир
-        self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+        self.campaign = build_dev_campaign()
+        self.player = None  # заставляет _load_mission создать нового
+        self.pickup_manager = None
+
+        # Статистика и Game Over экран - на весь ран кампании (не на
+        # отдельную миссию). Снимки по миссиям - дельта поверх этого,
+        # см. Campaign.begin_mission()/complete_mission().
+        self.game_stats = GameStats()
+        self.game_over_screen = GameOverScreen(
+            get_config("WIDTH"), get_config("HEIGHT"), self.game_stats
+        )
+        self.hud = HUD()
+        self.mission_complete_screen = None
+        self.campaign_complete_screen = None
+
+        self._load_mission(self.campaign.current)
+
+        print(
+            "Игра запущена. WASD - движение (относительно прицела), "
+            "мышь - прицел (360°), Space/ЛКМ - атака, "
+            "1..8 - слот оружия, R/ПКМ - перезарядка, "
+            "I/Tab - инвентарь, "
+            "F1 - debug, F5 - quicksave, F6 - save menu, "
+            "F9 - quickload, ESC - меню"
+        )
+        self.state = GameState.PLAYING
+
+    def _load_mission(self, mission) -> None:
+        """Построить мир текущей миссии кампании и разместить в нём игрока.
+
+        Игрок (HP/уровень/оружие/инвентарь/монеты) переживает смену миссии -
+        это непрерывная кампания, не рестарт с нуля (см. CAMPAIGN_PLAN.md).
+        Пересоздаются только мир этой карты (враги/лут/снаряды) и позиция
+        игрока в нём - GameStats не сбрасывается, копится на весь ран,
+        Campaign.begin_mission() берёт снимок как опорную точку для дельты
+        именно этой миссии."""
+        self.world = World(
+            map_file=os.path.join("data", f"{mission.map_file}.txt"),
+            width=mission.world_width,
+            height=mission.world_height,
+        )
         start_x, start_y = self.world.get_player_start_position()
-        self.log(f"Стартовая позиция (центр тайла @): ({start_x}, {start_y})")
+        self.log(
+            f"[{mission.title}] Стартовая позиция (центр тайла @): "
+            f"({start_x}, {start_y})"
+        )
 
-        # PickupManager — система дропа/сбора пикапов
-        self.pickup_manager = PickupManager()
+        if self.pickup_manager is None:
+            self.pickup_manager = PickupManager()
         self.world.enemy_manager.pickup_manager = self.pickup_manager
 
-        # Игрок спавнится центрированно в тайле, чтобы не пересекать
-        # соседние клетки и не застревать у стенок.
-        self.player = Player(start_x - _PLAYER_HALF, start_y - _PLAYER_HALF)
+        if self.player is None:
+            # Игрок спавнится центрированно в тайле, чтобы не пересекать
+            # соседние клетки и не застревать у стенок.
+            self.player = Player(start_x - _PLAYER_HALF, start_y - _PLAYER_HALF)
+            self.log(
+                f"Игрок создан: HP={self.player.health}/{self.player.max_health}, "
+                f"оружие='{self.player.current_weapon.name}'"
+            )
+        else:
+            # Кампания продолжается - переносим уже существующего игрока в
+            # точку старта новой карты, прогресс (HP/уровень/оружие) не трогаем.
+            self.player.x = float(start_x - _PLAYER_HALF)
+            self.player.y = float(start_y - _PLAYER_HALF)
+            self.player.rect.x = int(self.player.x)
+            self.player.rect.y = int(self.player.y)
+
+        # Обычный ростер вне видимости игрока + один именной босс миссии
+        # (см. DefeatBossObjective / EnemyManager.boss_alive). Босс не
+        # входит в target_counts - EnemyManager.spawn_initial() их не
+        # трогает, поэтому авто-респавн никогда не попытается его вернуть.
+        spawned = self.world.enemy_manager.spawn_initial(self.player.x, self.player.y)
+        boss = self.world.enemy_manager.spawn_enemy(
+            mission.boss_type_id, self.player.x, self.player.y
+        )
         self.log(
-            f"Игрок создан: HP={self.player.health}/{self.player.max_health}, "
-            f"оружие='{self.player.current_weapon.name}'"
+            f"[{mission.title}] Заспавнено врагов: {spawned} "
+            f"(по типам: {self.world.enemy_manager.alive_by_type()}), "
+            f"босс: {'да' if boss else 'НЕ НАЙДЕНА ТОЧКА СПАВНА'}",
+            "IMPORTANT",
         )
 
-        # Спавн врагов вне зоны видимости игрока
-        spawned = self.world.enemy_manager.spawn_initial(
-            self.player.x, self.player.y
-        )
-        self.log(f"Заспавнено врагов: {spawned} "
-                 f"(по типам: {self.world.enemy_manager.alive_by_type()})",
-                 "IMPORTANT")
+        self.campaign.begin_mission(self.game_stats)
 
         # Сброс автосейв-таймера и базовый уровень для детектора level-up
         self._autosave_timer = 0.0
@@ -139,20 +213,45 @@ class Game:
         self._last_fired_attack_id = -1
         self._burst_shots_fired = 0
 
-        # Статистика и Game Over экран
-        self.game_stats = GameStats()
-        self.game_over_screen = GameOverScreen(
-            get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
-        )
-        self.hud = HUD()
+    # --- Кампания: завершение миссии / переход между картами ---------------
 
-        print("Игра запущена. WASD - движение (относительно прицела), "
-              "мышь - прицел (360°), Space/ЛКМ - атака, "
-              "1..8 - слот оружия, R/ПКМ - перезарядка, "
-              "I/Tab - инвентарь, "
-              "F1 - debug, F5 - quicksave, F6 - save menu, "
-              "F9 - quickload, ESC - меню")
-        self.state = GameState.PLAYING
+    def _on_mission_complete(self) -> None:
+        """Цель текущей миссии достигнута (босс мёртв). Последняя миссия
+        кампании -> сразу итоговый экран победы; иначе -> экран статистики
+        миссии с кнопкой перехода на следующую."""
+        snapshot = self.campaign.complete_mission(self.game_stats)
+        if self.campaign.is_last:
+            self.log("=== КАМПАНИЯ ПРОЙДЕНА ===", "IMPORTANT")
+            self.campaign_complete_screen = CampaignCompleteScreen(
+                get_config("WIDTH"),
+                get_config("HEIGHT"),
+                self.campaign.total_snapshot(),
+            )
+            self.state = GameState.GAME_COMPLETE
+        else:
+            self.log(
+                f"=== Миссия пройдена: {self.campaign.current.title} ===", "IMPORTANT"
+            )
+            self.mission_complete_screen = MissionCompleteScreen(
+                get_config("WIDTH"),
+                get_config("HEIGHT"),
+                mission_title=self.campaign.current.title,
+                snapshot=snapshot,
+            )
+            self.state = GameState.MISSION_COMPLETE
+
+    def _start_mission_transition(self) -> None:
+        """Кнопка 'Следующая миссия' на MissionCompleteScreen - запускает
+        затухание, подмена мира происходит в момент полной черноты."""
+        self.state = GameState.TRANSITION
+        self.map_transition.start(on_swap=self._advance_to_next_mission)
+
+    def _advance_to_next_mission(self) -> None:
+        """Callback MapTransition в момент полной черноты - переключить
+        Campaign на следующую миссию и пересобрать под неё мир."""
+        mission = self.campaign.advance()
+        if mission is not None:
+            self._load_mission(mission)
 
     # --- Обработка событий -------------------------------------------------
 
@@ -167,11 +266,30 @@ class Game:
                 self._handle_inventory_event(event)
                 continue
 
+            # Экраны кампании (см. CAMPAIGN_PLAN.md) - одна кнопка, мышь и
+            # клавиатура через тот же handle_input, что у остальных экранов.
+            if self.state == GameState.MISSION_COMPLETE:
+                self._handle_mission_complete_event(event)
+                continue
+            if self.state == GameState.GAME_COMPLETE:
+                self._handle_game_complete_event(event)
+                continue
+
             # Главное меню - наведение/клик мышью по пунктам.
             if self.state == GameState.MENU and event.type in (
-                pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN
+                pygame.MOUSEMOTION,
+                pygame.MOUSEBUTTONDOWN,
             ):
                 self._handle_menu_input(event)
+                continue
+
+            # Меню сохранений/загрузки - наведение/клик мышью по строкам
+            # списка и кнопкам Да/Нет в модалках подтверждения.
+            if self.state in (
+                GameState.LOAD_MENU,
+                GameState.SAVE_MENU,
+            ) and event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
+                self._handle_save_load_menu_input(event)
                 continue
 
             # ЛКМ дополнительно к Space атакует в текущем направлении прицела
@@ -197,7 +315,7 @@ class Game:
             elif self.state == GameState.GAME_OVER:
                 self._handle_game_over_key(event)
             elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU):
-                self._handle_save_load_menu_key(event)
+                self._handle_save_load_menu_input(event)
 
     def _handle_menu_input(self, event):
         action = self.menu.handle_input(event)
@@ -229,8 +347,16 @@ class Game:
             self.state = GameState.MENU
         # Выбор слота оружия по 1..8 (соответствует Player.weapons,
         # растёт от 2 до 8 по мере разлочки уровнями)
-        elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
-                           pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8):
+        elif event.key in (
+            pygame.K_1,
+            pygame.K_2,
+            pygame.K_3,
+            pygame.K_4,
+            pygame.K_5,
+            pygame.K_6,
+            pygame.K_7,
+            pygame.K_8,
+        ):
             if self.player:
                 idx = event.key - pygame.K_1
                 if self.player.switch_weapon(idx):
@@ -325,7 +451,7 @@ class Game:
         self._save_menu_return_state = GameState.MENU
         self.state = GameState.SAVE_MENU
 
-    def _handle_save_load_menu_key(self, event):
+    def _handle_save_load_menu_input(self, event):
         if self.save_load_menu is None:
             self.state = GameState.MENU
             return
@@ -366,15 +492,21 @@ class Game:
                 pickup_manager=self.pickup_manager,
                 enemy_manager=self.world.enemy_manager,
             )
-            print(f"   ✅ Сохранено в слот {slot_id}" if ok
-                  else f"   ❌ Ошибка сохранения в слот {slot_id}")
+            print(
+                f"   ✅ Сохранено в слот {slot_id}"
+                if ok
+                else f"   ❌ Ошибка сохранения в слот {slot_id}"
+            )
             self.save_load_menu.refresh()
             return
 
         if atype == "delete_slot":
             ok = self.save_system.delete_slot(action["slot_id"])
-            print(f"   🗑 Слот {action['slot_id']} удалён" if ok
-                  else f"   ❌ Не удалось удалить слот {action['slot_id']}")
+            print(
+                f"   🗑 Слот {action['slot_id']} удалён"
+                if ok
+                else f"   ❌ Не удалось удалить слот {action['slot_id']}"
+            )
             self.save_load_menu.refresh()
             return
 
@@ -391,8 +523,11 @@ class Game:
 
         if atype == "delete_autosave":
             ok = self.save_system.delete_autosave(action["slot_id"])
-            print(f"   🗑 Автосейв {action['slot_id']} удалён" if ok
-                  else f"   ❌ Не удалось удалить автосейв {action['slot_id']}")
+            print(
+                f"   🗑 Автосейв {action['slot_id']} удалён"
+                if ok
+                else f"   ❌ Не удалось удалить автосейв {action['slot_id']}"
+            )
             self.save_load_menu.refresh()
             return
 
@@ -402,7 +537,11 @@ class Game:
         Та же логика, что и в quickload(), но без чтения файла.
         """
         if not self.player or not self.world:
-            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.world = World(
+                map_file=os.path.join("data", f"{get_config('MAP_FILE')}.txt"),
+                width=get_config("WORLD_WIDTH"),
+                height=get_config("WORLD_HEIGHT"),
+            )
             self.player = Player(0, 0)
         if not self.pickup_manager:
             self.pickup_manager = PickupManager()
@@ -411,22 +550,16 @@ class Game:
             self.game_stats = GameStats()
         if not self.game_over_screen:
             self.game_over_screen = GameOverScreen(
-                get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
+                get_config("WIDTH"), get_config("HEIGHT"), self.game_stats
             )
         if not self.hud:
             self.hud = HUD()
 
         self.save_system.apply_save_data_to_player(self.player, save_data)
         self.save_system.apply_save_data_to_world(self.world, save_data)
-        self.save_system.apply_save_data_to_enemies(
-            self.world.enemy_manager, save_data
-        )
-        self.save_system.apply_save_data_to_pickups(
-            self.pickup_manager, save_data
-        )
-        self.save_system.apply_save_data_to_game_stats(
-            self.game_stats, save_data
-        )
+        self.save_system.apply_save_data_to_enemies(self.world.enemy_manager, save_data)
+        self.save_system.apply_save_data_to_pickups(self.pickup_manager, save_data)
+        self.save_system.apply_save_data_to_game_stats(self.game_stats, save_data)
         # Сброс автосейв-состояния под загруженного игрока, чтобы level-up
         # триггер не сработал ложно сразу после загрузки.
         self._autosave_timer = 0.0
@@ -444,9 +577,35 @@ class Game:
         elif action == "QUIT":
             self.running = False
 
+    def _handle_mission_complete_event(self, event):
+        if not self.mission_complete_screen:
+            return
+        action = self.mission_complete_screen.handle_input(event)
+        if action == "NEXT":
+            self.mission_complete_screen = None
+            self._start_mission_transition()
+
+    def _handle_game_complete_event(self, event):
+        if not self.campaign_complete_screen:
+            return
+        action = self.campaign_complete_screen.handle_input(event)
+        if action == "MENU":
+            self.campaign_complete_screen = None
+            self.state = GameState.MENU
+
     # --- Обновление --------------------------------------------------------
 
     def update(self, dt):
+        if self.state == GameState.TRANSITION:
+            # Затухание между миссиями - подмена self.world/self.player
+            # происходит внутри map_transition (callback в момент полной
+            # черноты, см. _advance_to_next_mission). Обычный игровой
+            # update() на это время приостановлен.
+            self.map_transition.update(dt)
+            if not self.map_transition.active:
+                self.state = GameState.PLAYING
+            return
+
         if self.state != GameState.PLAYING or not self.player or not self.world:
             return
 
@@ -519,6 +678,18 @@ class Game:
         if self.game_stats:
             self.game_stats.update_position(self.player.x, self.player.y)
 
+        # Кампания миссий (см. CAMPAIGN_PLAN.md) - проверяем цель ПОСЛЕ
+        # применения урона атак/снарядов этого кадра (боевой урон боссу
+        # уже учтён выше), чтобы не запаздывать на кадр. campaign может
+        # быть None вне кампании (например мир восстановлен через quickload
+        # в сессии, где start_new_game ни разу не вызывался) - тогда просто
+        # не проверяем цель, старое поведение открытого мира не ломается.
+        if self.campaign is not None and self.campaign.current.objective.is_complete(
+            self.world
+        ):
+            self._on_mission_complete()
+            return
+
         # Контактный урон от врагов (враг касается игрока = дамаг)
         self.world.enemy_manager.apply_contact_damage(self.player)
 
@@ -533,7 +704,8 @@ class Game:
         self.world.update_camera(
             self.player.x + self.player.width // 2,
             self.player.y + self.player.height // 2,
-            get_config('WIDTH'), get_config('HEIGHT'),
+            get_config("WIDTH"),
+            get_config("HEIGHT"),
         )
 
     def _spawn_projectile(self, weapon) -> None:
@@ -546,12 +718,17 @@ class Game:
         cy = self.player.y + self.player.height / 2
 
         directions = pellet_directions(
-            self.player.aim_dx, self.player.aim_dy,
-            weapon.pellet_count, weapon.spread_angle_deg,
+            self.player.aim_dx,
+            self.player.aim_dy,
+            weapon.pellet_count,
+            weapon.spread_angle_deg,
         )
         for dx, dy in directions:
             projectile = Projectile(
-                cx, cy, dx, dy,
+                cx,
+                cy,
+                dx,
+                dy,
                 speed=weapon.projectile_speed,
                 damage=weapon.damage + self.player.damage_bonus,
                 max_range=weapon.projectile_max_range,
@@ -566,51 +743,82 @@ class Game:
             self.menu.draw(self.screen)
 
         elif self.state == GameState.PLAYING and self.player and self.world:
-            self.screen.fill(get_color('BLACK'))
-            # 1) Земля + миникарта
-            self.world.draw(self.screen, self.player.x, self.player.y)
-            # 2) Пикапы поверх земли (но под врагами)
-            if self.pickup_manager:
-                self.pickup_manager.draw(
-                    self.screen, self.world.camera_x, self.world.camera_y
-                )
-            # 3) Враги поверх земли (но под игроком)
-            self.world.enemy_manager.draw(
-                self.screen, self.world.camera_x, self.world.camera_y
-            )
-            # 3.5) Летящие снаряды поверх врагов
-            self.world.projectile_manager.draw(
-                self.screen, self.world.camera_x, self.world.camera_y
-            )
-            # 4) Игрок поверх врагов
-            self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
-            # 5) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
-            self.world.draw_overlay(self.screen, self.player.rect)
-            # 6) HUD
-            if self.hud:
-                self.hud.draw(self.screen, self.player)
+            self._draw_playing_scene()
 
-            if self.show_debug:
-                self._draw_debug_info()
+        elif self.state == GameState.TRANSITION:
+            # Затухание рисуется ПОВЕРХ последнего кадра игровой сцены -
+            # даёт настоящий crossfade-в-чёрное, а не мгновенный чёрный
+            # экран. self.world/self.player уже указывают на новую миссию
+            # после момента полной черноты (см. _advance_to_next_mission).
+            if self.player and self.world:
+                self._draw_playing_scene()
             else:
-                debug(
-                    "WASD - Move (relative to aim) | Mouse - Aim | Space/LMB - Attack | "
-                    "1..8 | R/RMB - Reload | I - Inventory | F1 - Debug | "
-                    "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
-                    y=get_config('HEIGHT') - 30,
-                )
+                self.screen.fill(get_color("BLACK"))
+            self.map_transition.draw(self.screen)
 
         elif self.state == GameState.GAME_OVER and self.game_over_screen:
             self.game_over_screen.draw(self.screen)
 
-        elif self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU) \
-                and self.save_load_menu is not None:
+        elif (
+            self.state in (GameState.LOAD_MENU, GameState.SAVE_MENU)
+            and self.save_load_menu is not None
+        ):
             self.save_load_menu.draw(self.screen)
 
         elif self.state == GameState.INVENTORY and self.inventory_screen is not None:
             self.inventory_screen.draw(self.screen, self.player)
 
+        elif self.state == GameState.MISSION_COMPLETE and self.mission_complete_screen:
+            self._draw_playing_scene()
+            self.mission_complete_screen.draw(self.screen)
+
+        elif self.state == GameState.GAME_COMPLETE and self.campaign_complete_screen:
+            self._draw_playing_scene()
+            self.campaign_complete_screen.draw(self.screen)
+
         pygame.display.flip()
+
+    def _draw_playing_scene(self) -> None:
+        """Отрисовка игровой сцены (мир/враги/игрок/HUD) - вынесено из
+        draw(), т.к. используется и для PLAYING, и как фон под затуханием
+        (TRANSITION) и под экранами статистики миссии (MISSION_COMPLETE/
+        GAME_COMPLETE), которые рисуются полупрозрачным оверлеем поверх."""
+        self.screen.fill(get_color("BLACK"))
+        # 1) Земля + миникарта
+        self.world.draw(self.screen, self.player.x, self.player.y)
+        # 2) Пикапы поверх земли (но под врагами)
+        if self.pickup_manager:
+            self.pickup_manager.draw(
+                self.screen, self.world.camera_x, self.world.camera_y
+            )
+        # 3) Враги поверх земли (но под игроком)
+        self.world.enemy_manager.draw(
+            self.screen, self.world.camera_x, self.world.camera_y
+        )
+        # 3.5) Летящие снаряды поверх врагов
+        self.world.projectile_manager.draw(
+            self.screen, self.world.camera_x, self.world.camera_y
+        )
+        # 4) Игрок поверх врагов
+        self.player.draw(self.screen, self.world.camera_x, self.world.camera_y)
+        # 5) Overlay (крыши/холм) поверх игрока с эффектом прозрачности
+        self.world.draw_overlay(self.screen, self.player.rect)
+        # 6) HUD
+        if self.hud:
+            self.hud.draw(self.screen, self.player)
+
+        if self.state != GameState.PLAYING:
+            return  # экраны статистики/затухание рисуют текст сами поверх
+
+        if self.show_debug:
+            self._draw_debug_info()
+        else:
+            debug(
+                "WASD - Move (relative to aim) | Mouse - Aim | Space/LMB - Attack | "
+                "1..8 | R/RMB - Reload | I - Inventory | F1 - Debug | "
+                "F5 - Quicksave | F6 - Save menu | F9 - Quickload | ESC - Menu",
+                y=get_config("HEIGHT") - 30,
+            )
 
     def _draw_debug_info(self):
         info = [
@@ -625,7 +833,8 @@ class Game:
             f"Weapon: {self.player.current_weapon.name} (dmg={self.player.current_weapon.damage}+{self.player.damage_bonus})"
             + (
                 f" | Ammo: {self.player.magazine_count()}/{self.player.reserve_count()}"
-                if self.player.current_weapon.ammo_type else ""
+                if self.player.current_weapon.ammo_type
+                else ""
             ),
             f"Attacking: {self.player.attacking} (id={self.player.attack_id})",
             f"Projectiles: {len(self.world.projectile_manager.projectiles)}",
@@ -651,13 +860,13 @@ class Game:
 
         Полностью отключается флагом ``AUTOSAVE_ENABLED=false`` в config.ini.
         """
-        if not get_config('AUTOSAVE_ENABLED', True):
+        if not get_config("AUTOSAVE_ENABLED", True):
             return
         if not self.player or not self.world:
             return
 
         # Триггер по level-up — детектируем по изменению player.level
-        if get_config('AUTOSAVE_ON_LEVEL_UP', True):
+        if get_config("AUTOSAVE_ON_LEVEL_UP", True):
             current_level = self.player.level
             if self._last_known_level is None:
                 self._last_known_level = current_level
@@ -670,7 +879,7 @@ class Game:
                 self._last_known_level = current_level
 
         # Периодический автосейв
-        interval_min = float(get_config('AUTOSAVE_INTERVAL_MINUTES', 5.0))
+        interval_min = float(get_config("AUTOSAVE_INTERVAL_MINUTES", 5.0))
         interval_sec = max(1.0, interval_min * 60.0)
         self._autosave_timer += dt
         if self._autosave_timer >= interval_sec:
@@ -684,7 +893,7 @@ class Game:
         """
         if not self.player or not self.world:
             return False
-        limit = int(get_config('AUTOSAVE_LIMIT', 3))
+        limit = int(get_config("AUTOSAVE_LIMIT", 3))
         ok = self.save_system.autosave(
             self.player,
             self.world,
@@ -726,7 +935,11 @@ class Game:
 
         # Создаём мир/игрока, если игра ещё не запущена
         if not self.player or not self.world:
-            self.world = World(map_file=os.path.join('data', 'main_world.txt'))
+            self.world = World(
+                map_file=os.path.join("data", f"{get_config('MAP_FILE')}.txt"),
+                width=get_config("WORLD_WIDTH"),
+                height=get_config("WORLD_HEIGHT"),
+            )
             self.player = Player(0, 0)
         if not self.pickup_manager:
             self.pickup_manager = PickupManager()
@@ -735,22 +948,16 @@ class Game:
             self.game_stats = GameStats()
         if not self.game_over_screen:
             self.game_over_screen = GameOverScreen(
-                get_config('WIDTH'), get_config('HEIGHT'), self.game_stats
+                get_config("WIDTH"), get_config("HEIGHT"), self.game_stats
             )
         if not self.hud:
             self.hud = HUD()
 
         self.save_system.apply_save_data_to_player(self.player, save_data)
         self.save_system.apply_save_data_to_world(self.world, save_data)
-        self.save_system.apply_save_data_to_enemies(
-            self.world.enemy_manager, save_data
-        )
-        self.save_system.apply_save_data_to_pickups(
-            self.pickup_manager, save_data
-        )
-        self.save_system.apply_save_data_to_game_stats(
-            self.game_stats, save_data
-        )
+        self.save_system.apply_save_data_to_enemies(self.world.enemy_manager, save_data)
+        self.save_system.apply_save_data_to_pickups(self.pickup_manager, save_data)
+        self.save_system.apply_save_data_to_game_stats(self.game_stats, save_data)
         # Сброс автосейв-состояния (см. _apply_loaded_save_data)
         self._autosave_timer = 0.0
         self._last_known_level = self.player.level
@@ -772,10 +979,9 @@ class Game:
             self.update(dt)
             self.draw()
 
-            self.clock.tick(get_config('FPS'))
+            self.clock.tick(get_config("FPS"))
 
         self.log("=== СЕССИЯ ЗАВЕРШЕНА ===", "IMPORTANT")
         self.logger.close()
         pygame.quit()
         sys.exit()
-
