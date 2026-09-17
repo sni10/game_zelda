@@ -2,16 +2,18 @@
 Тесты для HUD: полоска щита брони (issue #63) не крашит отрисовку и
 корректно отражает состояние PlayerStats/EquipmentSlots.
 """
+
 import os
 
 import pytest
 import pygame
 
-os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 pygame.init()
 pygame.display.set_mode((800, 600))
 
 from src.core.config_loader import load_config
+
 load_config()
 
 from src.entities.player import Player

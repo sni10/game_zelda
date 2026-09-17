@@ -1,6 +1,7 @@
 """
 Тесты для ChaseBehavior — преследование игрока с возвратом на patrol.
 """
+
 import math
 import pygame
 import pytest
@@ -56,13 +57,17 @@ def player_far():
 
 class TestChaseBehavior:
 
-    def test_enters_chase_when_player_in_radius(self, chase_ai, enemy, world, player_near):
+    def test_enters_chase_when_player_in_radius(
+        self, chase_ai, enemy, world, player_near
+    ):
         """Враг начинает преследование когда игрок рядом."""
         assert not chase_ai.is_chasing
         chase_ai.update(enemy, 0.1, world, player_near)
         assert chase_ai.is_chasing
 
-    def test_loses_chase_when_player_far(self, chase_ai, enemy, world, player_near, player_far):
+    def test_loses_chase_when_player_far(
+        self, chase_ai, enemy, world, player_near, player_far
+    ):
         """Враг теряет агро когда игрок уходит за lose_radius."""
         # Сначала начинаем преследование
         chase_ai.update(enemy, 0.1, world, player_near)
@@ -76,7 +81,9 @@ class TestChaseBehavior:
         chase_ai.update(enemy, 0.1, world, None)
         assert not chase_ai.is_chasing
 
-    def test_moves_toward_player_when_chasing(self, chase_ai, enemy, world, player_near):
+    def test_moves_toward_player_when_chasing(
+        self, chase_ai, enemy, world, player_near
+    ):
         """При преследовании враг двигается к игроку."""
         old_x = enemy.x
         chase_ai.update(enemy, 0.5, world, player_near)
@@ -92,4 +99,3 @@ class TestChaseBehavior:
         # Позиция не изменилась — упёрся
         assert enemy.x == old_x
         assert enemy.y == old_y
-

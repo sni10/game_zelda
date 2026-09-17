@@ -46,12 +46,12 @@ class MapTransition:
             return
         self._elapsed_ms += dt * 1000.0
         if self._phase == "out" and self._elapsed_ms >= self.FADE_MS:
+            self._elapsed_ms -= self.FADE_MS
             if not self._swapped and self._on_swap is not None:
                 self._on_swap()
                 self._swapped = True
             self._phase = "in"
-            self._elapsed_ms = 0.0
-        elif self._phase == "in" and self._elapsed_ms >= self.FADE_MS:
+        if self._phase == "in" and self._elapsed_ms >= self.FADE_MS:
             self._phase = None
             self._on_swap = None
 

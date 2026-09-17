@@ -6,6 +6,7 @@ Single Responsibility: хранить позицию/направление/ск
 (симметрично тому, как Weapon не занимается коллизиями, а EnemyManager их
 применяет к attack_rects).
 """
+
 import math
 
 import pygame
@@ -20,9 +21,17 @@ class Projectile:
     # округлится в 6 на пиксельной сетке pygame.Rect и увеличение исчезнет.
     HITBOX_SIZE = math.ceil(SIZE * 1.05)
 
-    def __init__(self, x: float, y: float, dx: float, dy: float,
-                 speed: float, damage: int, max_range: float,
-                 color=(255, 220, 120)):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        dx: float,
+        dy: float,
+        speed: float,
+        damage: int,
+        max_range: float,
+        color=(255, 220, 120),
+    ):
         self.x = x
         self.y = y
         self.dx = dx  # юнит-вектор направления (см. weapons.DIRECTION_VECTORS)
@@ -35,8 +44,10 @@ class Projectile:
         self.traveled = 0.0
         self.expired = False
         self.rect = pygame.Rect(
-            int(x - self.HITBOX_SIZE / 2), int(y - self.HITBOX_SIZE / 2),
-            self.HITBOX_SIZE, self.HITBOX_SIZE
+            int(x - self.HITBOX_SIZE / 2),
+            int(y - self.HITBOX_SIZE / 2),
+            self.HITBOX_SIZE,
+            self.HITBOX_SIZE,
         )
 
     def update(self, dt: float) -> None:

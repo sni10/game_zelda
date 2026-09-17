@@ -12,6 +12,7 @@ v0.3.1 — фикс F9: теперь сериализуем
 Загрузка валидирует схему: повреждённые файлы возвращают None и
 не крашат игру (см. _validate_save_data).
 """
+
 import json
 import os
 from datetime import datetime
@@ -56,9 +57,9 @@ class SaveSystem:
     AUTOSAVE_DEFAULT_LIMIT = 3
     _AUTOSAVE_FILENAME_FMT = "autosave_{:02d}.json"
 
-    def __init__(self):
+    def __init__(self, saves_dir=None):
         self.save_version = self.SAVE_VERSION
-        self.saves_dir = "saves"
+        self.saves_dir = saves_dir or os.environ.get("GAME_ZELDA_SAVE_DIR", "saves")
         self.quicksave_file = "quicksave.json"
         self.manual_dir = os.path.join(self.saves_dir, self.MANUAL_SUBDIR)
         self.autosave_dir = os.path.join(self.saves_dir, self.AUTOSAVE_SUBDIR)
@@ -73,8 +74,15 @@ class SaveSystem:
 
     # --- Сохранение --------------------------------------------------------
 
-    def save_game(self, player, world, game_stats=None, pickup_manager=None,
-                  enemy_manager=None, filename=None):
+    def save_game(
+        self,
+        player,
+        world,
+        game_stats=None,
+        pickup_manager=None,
+        enemy_manager=None,
+        filename=None,
+    ):
         """Сохранение игрового состояния в quicksave-файл (или filename).
 
         Manual-слоты сохраняются через :meth:`save_to_slot` — это сделано
@@ -92,9 +100,16 @@ class SaveSystem:
             print(f"Ошибка сохранения: {e}")
             return False
 
-    def _write_save(self, filepath, player, world, game_stats=None,
-                    pickup_manager=None, enemy_manager=None,
-                    extra_data=None):
+    def _write_save(
+        self,
+        filepath,
+        player,
+        world,
+        game_stats=None,
+        pickup_manager=None,
+        enemy_manager=None,
+        extra_data=None,
+    ):
         """Низкоуровневая запись save_data в указанный путь.
 
         ``extra_data`` — опциональный dict, который добавляется в save_data
@@ -279,7 +294,7 @@ class SaveSystem:
         идентификатор карты.
         """
         return {
-            "current_map": get_config('MAP_FILE'),
+            "current_map": get_config("MAP_FILE"),
             "discovered_areas": ["spawn"],
         }
 
@@ -308,8 +323,7 @@ class SaveSystem:
             weapon_slots = player_data.get("weapon_slots")
             if weapon_slots:
                 player.weapons = [
-                    create_weapon(wid) for wid in weapon_slots
-                    if wid in WEAPON_CATALOG
+                    create_weapon(wid) for wid in weapon_slots if wid in WEAPON_CATALOG
                 ]
             else:
                 # Старый сейв (версия < 1.2) без weapon_slots — довосстанавливаем
@@ -347,10 +361,13 @@ class SaveSystem:
                         armor = create_armor(armor_id)
                         equipment.equip(armor)
                     if armor is not None:
-                        armor.current_shield = max(0, min(
-                            int(info.get("current_shield", armor.max_shield)),
-                            armor.max_shield,
-                        ))
+                        armor.current_shield = max(
+                            0,
+                            min(
+                                int(info.get("current_shield", armor.max_shield)),
+                                armor.max_shield,
+                            ),
+                        )
 
             # Активное оружие — выставляем напрямую, без switch_weapon
             # (тот блокирует переключение во время attacking и при том же
@@ -379,7 +396,9 @@ class SaveSystem:
         """
         try:
             world_data = save_data.get("world") or {}
-            print(f"Мир восстановлен: {world_data.get('current_map', get_config('MAP_FILE'))}")
+            print(
+                f"Мир восстановлен: {world_data.get('current_map', get_config('MAP_FILE'))}"
+            )
         except Exception as e:
             print(f"Ошибка применения данных мира: {e}")
 
@@ -444,8 +463,15 @@ class SaveSystem:
     def slot_exists(self, slot_id: int) -> bool:
         return os.path.exists(self._slot_filepath(slot_id))
 
-    def save_to_slot(self, slot_id: int, player, world, game_stats=None,
-                     pickup_manager=None, enemy_manager=None) -> bool:
+    def save_to_slot(
+        self,
+        slot_id: int,
+        player,
+        world,
+        game_stats=None,
+        pickup_manager=None,
+        enemy_manager=None,
+    ) -> bool:
         """Сохранить игру в ручной слот ``slot_id`` (1..10).
 
         Перезаписывает слот без подтверждения — подтверждение должно
@@ -460,7 +486,11 @@ class SaveSystem:
         try:
             return self._write_save(
                 self._slot_filepath(slot_id),
-                player, world, game_stats, pickup_manager, enemy_manager,
+                player,
+                world,
+                game_stats,
+                pickup_manager,
+                enemy_manager,
             )
         except Exception as e:
             print(f"Ошибка сохранения в слот {slot_id}: {e}")
@@ -590,9 +620,16 @@ class SaveSystem:
             self.autosave_dir, self._AUTOSAVE_FILENAME_FMT.format(int(slot_id))
         )
 
-    def autosave(self, player, world, game_stats=None, pickup_manager=None,
-                 enemy_manager=None, reason: str = "periodic",
-                 limit: int = None) -> bool:
+    def autosave(
+        self,
+        player,
+        world,
+        game_stats=None,
+        pickup_manager=None,
+        enemy_manager=None,
+        reason: str = "periodic",
+        limit: int = None,
+    ) -> bool:
         """Записать автосейв с ротацией.
 
         Алгоритм слота:
@@ -613,8 +650,12 @@ class SaveSystem:
             slot_id = self._pick_autosave_slot(limit)
             filepath = self._autosave_filepath(slot_id)
             ok = self._write_save(
-                filepath, player, world, game_stats,
-                pickup_manager, enemy_manager,
+                filepath,
+                player,
+                world,
+                game_stats,
+                pickup_manager,
+                enemy_manager,
                 extra_data={"autosave_reason": str(reason)},
             )
             if ok:
@@ -647,11 +688,12 @@ class SaveSystem:
         """Удалить автосейвы со slot_id > limit (если лимит уменьшился)."""
         try:
             for filename in os.listdir(self.autosave_dir):
-                if not filename.startswith("autosave_") \
-                        or not filename.endswith(".json"):
+                if not filename.startswith("autosave_") or not filename.endswith(
+                    ".json"
+                ):
                     continue
                 try:
-                    slot_id = int(filename[len("autosave_"):-len(".json")])
+                    slot_id = int(filename[len("autosave_") : -len(".json")])
                 except ValueError:
                     continue
                 if slot_id > limit:
@@ -672,11 +714,10 @@ class SaveSystem:
         if not os.path.isdir(self.autosave_dir):
             return result
         for filename in os.listdir(self.autosave_dir):
-            if not filename.startswith("autosave_") \
-                    or not filename.endswith(".json"):
+            if not filename.startswith("autosave_") or not filename.endswith(".json"):
                 continue
             try:
-                slot_id = int(filename[len("autosave_"):-len(".json")])
+                slot_id = int(filename[len("autosave_") : -len(".json")])
             except ValueError:
                 continue
             filepath = os.path.join(self.autosave_dir, filename)

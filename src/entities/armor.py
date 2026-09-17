@@ -13,10 +13,10 @@ arms/legs). Каждый надетый предмет даёт очки щит�
 > 0 (EquipmentSlots.absorb_damage) - если один предмет пробивается раньше
 остальных, остаток урона уходит на оставшиеся со щитом, а не на HP.
 """
+
 from typing import Dict, Optional, Tuple, Type
 
 from src.core.config_loader import get_config
-
 
 SLOT_NAMES: Tuple[str, ...] = ("helmet", "chest", "arms", "legs")
 
@@ -29,8 +29,7 @@ class Armor:
     slot: str = ""
     color: Tuple[int, int, int] = (120, 120, 140)
 
-    def __init__(self, max_shield: int, defense: int,
-                 speed_mod: float, hp_bonus: int):
+    def __init__(self, max_shield: int, defense: int, speed_mod: float, hp_bonus: int):
         self.max_shield = max_shield
         self.defense = defense
         self.speed_mod = speed_mod
@@ -94,10 +93,10 @@ def create_armor(armor_id: str) -> Armor:
     cls = ARMOR_CATALOG[armor_id]
     prefix = _CONFIG_PREFIX[armor_id]
     return cls(
-        max_shield=get_config(f'ARMOR_{prefix}_SHIELD', 0),
-        defense=get_config(f'ARMOR_{prefix}_DEFENSE', 0),
-        speed_mod=get_config(f'ARMOR_{prefix}_SPEED_MOD', 0.0),
-        hp_bonus=get_config(f'ARMOR_{prefix}_HP_BONUS', 0),
+        max_shield=get_config(f"ARMOR_{prefix}_SHIELD", 0),
+        defense=get_config(f"ARMOR_{prefix}_DEFENSE", 0),
+        speed_mod=get_config(f"ARMOR_{prefix}_SPEED_MOD", 0.0),
+        hp_bonus=get_config(f"ARMOR_{prefix}_HP_BONUS", 0),
     )
 
 
@@ -105,9 +104,7 @@ class EquipmentSlots:
     """4 именованных слота брони игрока (см. SLOT_NAMES)."""
 
     def __init__(self):
-        self.slots: Dict[str, Optional[Armor]] = {
-            name: None for name in SLOT_NAMES
-        }
+        self.slots: Dict[str, Optional[Armor]] = {name: None for name in SLOT_NAMES}
 
     def equip(self, armor: Armor) -> None:
         self.slots[armor.slot] = armor

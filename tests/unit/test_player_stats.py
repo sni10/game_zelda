@@ -1,6 +1,7 @@
 """
 Тесты для PlayerStats — i-frames, XP, level-up, coins.
 """
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -95,4 +96,3 @@ class TestPlayerStatsProgression:
         assert stats.coins == 5
         stats.add_coins(3)
         assert stats.coins == 8
-

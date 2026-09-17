@@ -12,30 +12,31 @@
 - Новые виды оружия добавляются как подклассы Weapon - переопределяют
   только нужные параметры или метод get_attack_rects().
 """
+
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Type
 import math
 import pygame
-
 
 # Единичные векторы по 8 направлениям. Диагонали нормализованы
 # (1/sqrt(2) ≈ 0.7071), чтобы радиальные расстояния были одинаковыми
 # во всех направлениях.
 DIAGONAL = math.sqrt(2) / 2  # ~0.7071
 DIRECTION_VECTORS = {
-    'up':         (0.0, -1.0),
-    'down':       (0.0, 1.0),
-    'left':       (-1.0, 0.0),
-    'right':      (1.0, 0.0),
-    'up_left':    (-DIAGONAL, -DIAGONAL),
-    'up_right':   (DIAGONAL, -DIAGONAL),
-    'down_left':  (-DIAGONAL, DIAGONAL),
-    'down_right': (DIAGONAL, DIAGONAL),
+    "up": (0.0, -1.0),
+    "down": (0.0, 1.0),
+    "left": (-1.0, 0.0),
+    "right": (1.0, 0.0),
+    "up_left": (-DIAGONAL, -DIAGONAL),
+    "up_right": (DIAGONAL, -DIAGONAL),
+    "down_left": (-DIAGONAL, DIAGONAL),
+    "down_right": (DIAGONAL, DIAGONAL),
 }
 
 
-def _rect_in_vector_direction(player_rect: pygame.Rect, dx: float, dy: float,
-                              reach: int, width: int, height: int) -> pygame.Rect:
+def _rect_in_vector_direction(
+    player_rect: pygame.Rect, dx: float, dy: float, reach: int, width: int, height: int
+) -> pygame.Rect:
     """Создать Rect зоны атаки вдоль произвольного юнит-вектора (dx, dy) -
     не только 8 фиксированных направлений, любой угол (360° прицеливание).
 
@@ -47,7 +48,9 @@ def _rect_in_vector_direction(player_rect: pygame.Rect, dx: float, dy: float,
     # Полу-размер игрока вдоль вектора направления.
     # Для перпендикулярных - это половина соотв. стороны (16 для 32x32).
     # Для диагоналей - проекция полудиагонали игрока на ось направления.
-    player_extent = abs(dx) * (player_rect.width / 2) + abs(dy) * (player_rect.height / 2)
+    player_extent = abs(dx) * (player_rect.width / 2) + abs(dy) * (
+        player_rect.height / 2
+    )
 
     # Полу-размер самой зоны атаки вдоль того же вектора.
     rect_extent = abs(dx) * (width / 2) + abs(dy) * (height / 2)
@@ -60,16 +63,18 @@ def _rect_in_vector_direction(player_rect: pygame.Rect, dx: float, dy: float,
     return pygame.Rect(int(cx - width / 2), int(cy - height / 2), width, height)
 
 
-def _rect_in_direction(player_rect: pygame.Rect, direction: str,
-                       reach: int, width: int, height: int) -> pygame.Rect:
+def _rect_in_direction(
+    player_rect: pygame.Rect, direction: str, reach: int, width: int, height: int
+) -> pygame.Rect:
     """Обёртка над _rect_in_vector_direction для одного из 8 именованных
     направлений - сохранена ради существующих тестов/вызовов по строке."""
     dx, dy = DIRECTION_VECTORS[direction]
     return _rect_in_vector_direction(player_rect, dx, dy, reach, width, height)
 
 
-def pellet_directions(aim_dx: float, aim_dy: float, pellet_count: int,
-                      spread_angle_deg: float) -> List[Tuple[float, float]]:
+def pellet_directions(
+    aim_dx: float, aim_dy: float, pellet_count: int, spread_angle_deg: float
+) -> List[Tuple[float, float]]:
     """Вернуть pellet_count юнит-векторов направлений для одного залпа.
 
     pellet_count<=1 - вернуть только (aim_dx, aim_dy) без веера (Rifle/SMG).
@@ -103,9 +108,9 @@ class Weapon(ABC):
     category: str = "melee"  # "melee" | "ranged"
 
     # Параметры зоны поражения (одна клетка-rect)
-    reach: int = 0          # зазор от игрока, px (0 = впритык)
-    rect_width: int = 32    # ширина одной клетки атаки
-    rect_height: int = 32   # высота одной клетки атаки
+    reach: int = 0  # зазор от игрока, px (0 = впритык)
+    rect_width: int = 32  # ширина одной клетки атаки
+    rect_height: int = 32  # высота одной клетки атаки
 
     # Боевые параметры
     damage: int = 10
@@ -134,8 +139,9 @@ class Weapon(ABC):
     spread_angle_deg: float = 0.0
 
     @abstractmethod
-    def get_attack_rects(self, player_rect: pygame.Rect,
-                         aim_dx: float, aim_dy: float) -> List[pygame.Rect]:
+    def get_attack_rects(
+        self, player_rect: pygame.Rect, aim_dx: float, aim_dy: float
+    ) -> List[pygame.Rect]:
         """Вернуть список зон поражения этой атаки. (aim_dx, aim_dy) -
         нормализованный вектор прицела (360°, не только 8 направлений)."""
         raise NotImplementedError
@@ -143,10 +149,11 @@ class Weapon(ABC):
 
 class MeleeWeapon(Weapon):
     """Меч: ближний бой, зона атаки впритык к игроку (reach=0)."""
+
     name = "Sword"
     weapon_id = "sword"
     category = "melee"
-    color = (255, 255, 0)        # жёлтая
+    color = (255, 255, 0)  # жёлтая
     reach = 0
     rect_width = 32
     rect_height = 32
@@ -157,26 +164,43 @@ class MeleeWeapon(Weapon):
     cooldown_ms = 120
 
     def get_attack_rects(self, player_rect, aim_dx, aim_dy):
-        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
-                                          self.reach, self.rect_width, self.rect_height)]
+        return [
+            _rect_in_vector_direction(
+                player_rect,
+                aim_dx,
+                aim_dy,
+                self.reach,
+                self.rect_width,
+                self.rect_height,
+            )
+        ]
 
 
 class PolearmWeapon(Weapon):
     """Копьё/яри: средний бой, отступ в полклетки от игрока."""
+
     name = "Spear"
     weapon_id = "spear"
     category = "melee"
-    color = (180, 220, 255)      # светло-голубая
+    color = (180, 220, 255)  # светло-голубая
     reach = 16
     rect_width = 32
     rect_height = 32
-    damage = 1                   # как меч
+    damage = 1  # как меч
     duration_ms = 280
     cooldown_ms = 180
 
     def get_attack_rects(self, player_rect, aim_dx, aim_dy):
-        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
-                                          self.reach, self.rect_width, self.rect_height)]
+        return [
+            _rect_in_vector_direction(
+                player_rect,
+                aim_dx,
+                aim_dy,
+                self.reach,
+                self.rect_width,
+                self.rect_height,
+            )
+        ]
 
 
 class RangedWeapon(Weapon):
@@ -185,10 +209,11 @@ class RangedWeapon(Weapon):
     проверяет столкновения по кадрам в ProjectileManager. get_attack_rects()
     здесь не используется для урона (см. ниже) - урон наносит снаряд.
     """
+
     name = "Rifle"
     weapon_id = "rifle"
     category = "ranged"
-    color = (255, 160, 60)       # оранжевая
+    color = (255, 160, 60)  # оранжевая
     reach = 0
     rect_width = 32
     rect_height = 32
@@ -199,10 +224,10 @@ class RangedWeapon(Weapon):
     fires_projectile = True
     ammo_type = "bullets"
     magazine_size = 12
-    projectile_speed = 480       # px/сек
+    projectile_speed = 480  # px/сек
     # Скорострельное оружие - дистанцию не ограничиваем: пуля летит, пока
     # не упрётся в стену/границу мира (см. ProjectileManager), не по таймеру.
-    projectile_max_range = float('inf')
+    projectile_max_range = float("inf")
 
     def get_attack_rects(self, player_rect, aim_dx, aim_dy):
         # Урон наносит Projectile, не мгновенный rect - иначе Player.draw()
@@ -218,13 +243,14 @@ class BurstRifle(RangedWeapon):
     Выстрелы разнесены во времени (burst_delay_ms), не мгновенны все разом -
     таймингом рулит Game.update() (см. _burst_shots_fired в game.py).
     """
+
     name = "SMG"
     weapon_id = "smg"
-    color = (255, 205, 60)       # золотисто-жёлтая (отличима от Rifle)
+    color = (255, 205, 60)  # золотисто-жёлтая (отличима от Rifle)
     reach = 0
     damage = 1
-    duration_ms = 260            # покрывает все 3 выстрела очереди с запасом
-    cooldown_ms = 380            # общий откат после всей очереди
+    duration_ms = 260  # покрывает все 3 выстрела очереди с запасом
+    cooldown_ms = 380  # общий откат после всей очереди
 
     fires_projectile = True
     ammo_type = "bullets"
@@ -233,19 +259,20 @@ class BurstRifle(RangedWeapon):
     # Скорострельное оружие - без ограничения дистанции (см. RangedWeapon).
 
     burst_count = 3
-    burst_delay_ms = 70          # интервал между выстрелами очереди, мс
+    burst_delay_ms = 70  # интервал между выстрелами очереди, мс
 
 
 class ShotgunWeapon(RangedWeapon):
     """Дробовик: 5 пуль веером за один выстрел - одна точно по центральной
     оси прицела, остальные симметрично расходятся по spread_angle_deg."""
+
     name = "Shotgun"
     weapon_id = "shotgun"
-    color = (255, 110, 30)       # тёмно-оранжевая
+    color = (255, 110, 30)  # тёмно-оранжевая
     reach = 0
-    damage = 1                   # за пульку - до 5 суммарно в упор
+    damage = 1  # за пульку - до 5 суммарно в упор
     duration_ms = 220
-    cooldown_ms = 550            # медленнее и мощнее одиночного выстрела
+    cooldown_ms = 550  # медленнее и мощнее одиночного выстрела
 
     fires_projectile = True
     ammo_type = "bullets"
@@ -253,10 +280,10 @@ class ShotgunWeapon(RangedWeapon):
     projectile_speed = 460
     # Единственное оружие с ограничением дальности (см. RangedWeapon) - это
     # его штатный диапазон, дополнительно увеличенный на ~12%.
-    projectile_max_range = 470   # было 420 (старый дефолт Rifle) * 1.12
+    projectile_max_range = 470  # было 420 (старый дефолт Rifle) * 1.12
 
     pellet_count = 5
-    spread_angle_deg = 30        # ±15° от центральной оси прицела
+    spread_angle_deg = 30  # ±15° от центральной оси прицела
 
 
 class AoeWeapon(Weapon):
@@ -264,20 +291,29 @@ class AoeWeapon(Weapon):
 
     Урон = 3 - убивает Heavy с одного попадания, Light/Fast - тем более.
     """
+
     name = "Bomb"
     weapon_id = "bomb"
     category = "ranged"
-    color = (255, 80, 80)        # красная
+    color = (255, 80, 80)  # красная
     reach = 48  # 1.5 клетки до центра взрыва
-    rect_width = 96   # 3 клетки
+    rect_width = 96  # 3 клетки
     rect_height = 96
-    damage = 3                   # достаточно чтобы убить Heavy за один взрыв
+    damage = 3  # достаточно чтобы убить Heavy за один взрыв
     duration_ms = 400
     cooldown_ms = 600
 
     def get_attack_rects(self, player_rect, aim_dx, aim_dy):
-        return [_rect_in_vector_direction(player_rect, aim_dx, aim_dy,
-                                          self.reach, self.rect_width, self.rect_height)]
+        return [
+            _rect_in_vector_direction(
+                player_rect,
+                aim_dx,
+                aim_dy,
+                self.reach,
+                self.rect_width,
+                self.rect_height,
+            )
+        ]
 
 
 # Каталог всех доступных типов оружия по стабильному weapon_id.
@@ -303,4 +339,3 @@ def starting_slot_assignment() -> List[str]:
     """Стартовая раскладка слотов нового игрока: 2 слота, оба - мечи
     (ближний бой)."""
     return ["sword", "spear"]
-

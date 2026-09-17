@@ -8,22 +8,30 @@
 - RangedWeapon (Rifle) - реальная баллистика через Projectile, не мгновенный rect.
 - Переключение оружий в Player.switch_weapon().
 """
+
 import math
 import os
 import pytest
 import pygame
 
 from src.entities.weapons import (
-    MeleeWeapon, PolearmWeapon, RangedWeapon, AoeWeapon,
-    BurstRifle, ShotgunWeapon,
-    DIRECTION_VECTORS, _rect_in_direction, _rect_in_vector_direction,
+    MeleeWeapon,
+    PolearmWeapon,
+    RangedWeapon,
+    AoeWeapon,
+    BurstRifle,
+    ShotgunWeapon,
+    DIRECTION_VECTORS,
+    _rect_in_direction,
+    _rect_in_vector_direction,
     pellet_directions,
-    WEAPON_CATALOG, create_weapon, starting_slot_assignment,
+    WEAPON_CATALOG,
+    create_weapon,
+    starting_slot_assignment,
 )
 
-
 # Тесты не должны открывать окно
-os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 pygame.init()
 
 
@@ -35,6 +43,7 @@ def player_rect():
 
 # --- Симметрия (главный фикс бага) -----------------------------------------
 
+
 class TestSymmetry:
     """Раньше down/right были впритык, а up/left - с зазором.
     Теперь все 8 направлений симметричны через _rect_in_direction()."""
@@ -42,28 +51,28 @@ class TestSymmetry:
     @pytest.mark.parametrize("reach,size", [(0, 32), (16, 32), (32, 32)])
     def test_horizontal_pair_symmetric(self, player_rect, reach, size):
         """Зазор слева = зазор справа."""
-        left = _rect_in_direction(player_rect, 'left', reach, size, size)
-        right = _rect_in_direction(player_rect, 'right', reach, size, size)
+        left = _rect_in_direction(player_rect, "left", reach, size, size)
+        right = _rect_in_direction(player_rect, "right", reach, size, size)
 
         gap_left = player_rect.left - left.right
         gap_right = right.left - player_rect.right
 
-        assert gap_left == gap_right == reach, (
-            f"reach={reach}: gap_left={gap_left}, gap_right={gap_right}"
-        )
+        assert (
+            gap_left == gap_right == reach
+        ), f"reach={reach}: gap_left={gap_left}, gap_right={gap_right}"
 
     @pytest.mark.parametrize("reach,size", [(0, 32), (16, 32), (32, 32)])
     def test_vertical_pair_symmetric(self, player_rect, reach, size):
         """Зазор сверху = зазор снизу."""
-        up = _rect_in_direction(player_rect, 'up', reach, size, size)
-        down = _rect_in_direction(player_rect, 'down', reach, size, size)
+        up = _rect_in_direction(player_rect, "up", reach, size, size)
+        down = _rect_in_direction(player_rect, "down", reach, size, size)
 
         gap_up = player_rect.top - up.bottom
         gap_down = down.top - player_rect.bottom
 
-        assert gap_up == gap_down == reach, (
-            f"reach={reach}: gap_up={gap_up}, gap_down={gap_down}"
-        )
+        assert (
+            gap_up == gap_down == reach
+        ), f"reach={reach}: gap_up={gap_up}, gap_down={gap_down}"
 
     def test_all_directions_present(self, player_rect):
         """Базовый sanity: для всех 8 направлений рассчитывается rect."""
@@ -73,10 +82,10 @@ class TestSymmetry:
 
     def test_diagonals_symmetric(self, player_rect):
         """Диагональные пары симметричны относительно центра игрока."""
-        ul = _rect_in_direction(player_rect, 'up_left', 0, 32, 32)
-        dr = _rect_in_direction(player_rect, 'down_right', 0, 32, 32)
-        ur = _rect_in_direction(player_rect, 'up_right', 0, 32, 32)
-        dl = _rect_in_direction(player_rect, 'down_left', 0, 32, 32)
+        ul = _rect_in_direction(player_rect, "up_left", 0, 32, 32)
+        dr = _rect_in_direction(player_rect, "down_right", 0, 32, 32)
+        ur = _rect_in_direction(player_rect, "up_right", 0, 32, 32)
+        dl = _rect_in_direction(player_rect, "down_left", 0, 32, 32)
 
         cx, cy = player_rect.center
         # ul и dr - зеркальная пара относительно центра
@@ -133,18 +142,19 @@ class TestVectorDirection:
 
 # --- Поведение конкретных оружий -------------------------------------------
 
+
 class TestMeleeWeapon:
     """Меч: впритык, reach=0."""
 
     def test_no_gap(self, player_rect):
         sword = MeleeWeapon()
         assert sword.reach == 0
-        rect = sword.get_attack_rects(player_rect, *DIRECTION_VECTORS['right'])[0]
+        rect = sword.get_attack_rects(player_rect, *DIRECTION_VECTORS["right"])[0]
         # Зона начинается ровно на правом ребре игрока
         assert rect.left == player_rect.right
 
     def test_returns_single_rect(self, player_rect):
-        rects = MeleeWeapon().get_attack_rects(player_rect, *DIRECTION_VECTORS['up'])
+        rects = MeleeWeapon().get_attack_rects(player_rect, *DIRECTION_VECTORS["up"])
         assert len(rects) == 1
 
 
@@ -154,7 +164,7 @@ class TestPolearmWeapon:
     def test_half_tile_gap(self, player_rect):
         spear = PolearmWeapon()
         assert spear.reach == 16
-        rect = spear.get_attack_rects(player_rect, *DIRECTION_VECTORS['right'])[0]
+        rect = spear.get_attack_rects(player_rect, *DIRECTION_VECTORS["right"])[0]
         gap = rect.left - player_rect.right
         assert gap == 16
 
@@ -166,7 +176,7 @@ class TestRangedWeapon:
         """Урон наносит Projectile, get_attack_rects() пуст (иначе
         Player.draw() рисовал бы поверх летящей пули старую рамку)."""
         rifle = RangedWeapon()
-        assert rifle.get_attack_rects(player_rect, *DIRECTION_VECTORS['right']) == []
+        assert rifle.get_attack_rects(player_rect, *DIRECTION_VECTORS["right"]) == []
 
     def test_fires_projectile_flag(self):
         assert RangedWeapon.fires_projectile is True
@@ -186,7 +196,7 @@ class TestRangedWeapon:
     def test_unlimited_range(self):
         """Скорострельное оружие (Rifle) - дистанцию не ограничиваем: пуля
         летит, пока не упрётся в стену/границу мира, не по таймеру дальности."""
-        assert RangedWeapon.projectile_max_range == float('inf')
+        assert RangedWeapon.projectile_max_range == float("inf")
 
 
 class TestBurstRifle:
@@ -197,7 +207,7 @@ class TestBurstRifle:
 
     def test_no_instant_attack_rects(self, player_rect):
         smg = BurstRifle()
-        assert smg.get_attack_rects(player_rect, *DIRECTION_VECTORS['right']) == []
+        assert smg.get_attack_rects(player_rect, *DIRECTION_VECTORS["right"]) == []
 
     def test_burst_params(self):
         assert BurstRifle.fires_projectile is True
@@ -206,7 +216,7 @@ class TestBurstRifle:
 
     def test_unlimited_range(self):
         """Скорострельное оружие - дистанция не ограничена (см. RangedWeapon)."""
-        assert BurstRifle.projectile_max_range == float('inf')
+        assert BurstRifle.projectile_max_range == float("inf")
 
     def test_duration_covers_full_burst(self):
         """attacking должен держаться дольше, чем время до последнего
@@ -221,7 +231,7 @@ class TestShotgunWeapon:
 
     def test_no_instant_attack_rects(self, player_rect):
         shotgun = ShotgunWeapon()
-        assert shotgun.get_attack_rects(player_rect, *DIRECTION_VECTORS['right']) == []
+        assert shotgun.get_attack_rects(player_rect, *DIRECTION_VECTORS["right"]) == []
 
     def test_pellet_params(self):
         assert ShotgunWeapon.fires_projectile is True
@@ -280,12 +290,13 @@ class TestAoeWeapon:
 
     def test_large_area(self, player_rect):
         bomb = AoeWeapon()
-        rect = bomb.get_attack_rects(player_rect, *DIRECTION_VECTORS['right'])[0]
+        rect = bomb.get_attack_rects(player_rect, *DIRECTION_VECTORS["right"])[0]
         assert rect.width == 96
         assert rect.height == 96
 
 
 # --- Интеграция с Player ---------------------------------------------------
+
 
 class TestPlayerWeaponSwitching:
     """Player должен корректно переключать оружия."""
@@ -293,6 +304,7 @@ class TestPlayerWeaponSwitching:
     @pytest.fixture
     def player(self):
         from src.entities.player import Player
+
         return Player(100, 100)
 
     def test_default_weapon_is_first(self, player):
@@ -319,12 +331,18 @@ class TestPlayerWeaponSwitching:
 
 # --- Каталог оружия и стабильные id -----------------------------------------
 
+
 class TestWeaponCatalog:
     """WEAPON_CATALOG - единственный источник правды для id/создания оружия."""
 
     def test_catalog_ids(self):
         assert set(WEAPON_CATALOG) == {
-            "sword", "spear", "rifle", "smg", "shotgun", "bomb",
+            "sword",
+            "spear",
+            "rifle",
+            "smg",
+            "shotgun",
+            "bomb",
         }
 
     def test_create_weapon_by_id(self):
@@ -345,12 +363,14 @@ class TestWeaponCatalog:
 
 # --- Гибкие слоты (2 -> 8 по уровню, свободное назначение) ------------------
 
+
 class TestFlexibleWeaponSlots:
     """PlayerCombat.unlock_slot / set_slot_weapon (см. player_combat.py)."""
 
     @pytest.fixture
     def player(self):
         from src.entities.player import Player
+
         return Player(100, 100)
 
     def test_starts_with_two_slots(self, player):
@@ -399,6 +419,7 @@ class TestMoveWeapon:
     @pytest.fixture
     def player(self):
         from src.entities.player import Player
+
         p = Player(100, 100)
         p.unlock_slot()
         p.unlock_slot()
@@ -444,10 +465,12 @@ class TestWeaponSlotUnlockOnLevelUp:
     @pytest.fixture
     def player(self):
         from src.entities.player import Player
+
         return Player(100, 100)
 
     def test_slots_unlock_as_player_levels(self, player):
         from src.entities.player_stats import unlocked_weapon_slots
+
         player.stats.gain_xp(1_000_000)  # разом до max_level
         expected = unlocked_weapon_slots(player.level)
         assert expected > 2  # хотя бы один уровень разлочки пройден
@@ -456,12 +479,14 @@ class TestWeaponSlotUnlockOnLevelUp:
 
 # --- Патроны (v0.4.0b) -------------------------------------------------------
 
+
 class TestAmmo:
     """PlayerCombat: магазин/резерв, гейтинг try_attack, reload, add_ammo."""
 
     @pytest.fixture
     def player(self):
         from src.entities.player import Player
+
         p = Player(100, 100)
         # На слот 0 (по умолчанию sword) сажаем rifle, чтобы тестировать
         # атаку без переключения слотов.
@@ -503,7 +528,9 @@ class TestAmmo:
         for _ in range(10):
             player.try_attack()
         assert player.attack_id == attack_id_after_first
-        assert player.magazine_count() == magazine_after_first  # патрон не тратится повторно
+        assert (
+            player.magazine_count() == magazine_after_first
+        )  # патрон не тратится повторно
 
     def test_melee_weapon_unaffected_by_empty_magazine(self, player):
         # Слот 1 - meele (spear по умолчанию из starting_slot_assignment)
@@ -517,7 +544,9 @@ class TestAmmo:
         reserve_before = player.reserve_count()
         ok = player.reload()
         assert ok is True
-        assert player.magazine_count() == min(RangedWeapon.magazine_size, reserve_before)
+        assert player.magazine_count() == min(
+            RangedWeapon.magazine_size, reserve_before
+        )
         assert player.reserve_count() == reserve_before - player.magazine_count()
 
     def test_reload_caps_at_magazine_size(self, player):
@@ -552,4 +581,3 @@ class TestAmmo:
         player.switch_weapon(1)  # spear
         assert player.magazine_count() == 0
         assert player.reserve_count() == 0
-

@@ -1,6 +1,7 @@
 """
 Тесты для combat loop: knockback, contact damage, game over, drops.
 """
+
 import pytest
 import pygame
 import random
@@ -34,8 +35,13 @@ def enemy_manager(world, pickup_manager):
 
 def _make_enemy(x=500, y=500, hp=3, damage=1, speed=80):
     stats = EnemyStats(
-        name='Test', max_health=hp, speed=speed,
-        width=24, height=24, color=(200, 80, 80), damage=damage
+        name="Test",
+        max_health=hp,
+        speed=speed,
+        width=24,
+        height=24,
+        color=(200, 80, 80),
+        damage=damage,
     )
     zone = pygame.Rect(400, 400, 200, 200)
     return Enemy(x, y, stats, IdleBehavior(), zone)
@@ -164,8 +170,13 @@ class TestDropLoot:
         """XP пикап всегда дропается при смерти."""
         random.seed(42)
         stats = EnemyStats(
-            name='Light', max_health=1, speed=80,
-            width=24, height=24, color=(200, 80, 80), damage=5
+            name="Light",
+            max_health=1,
+            speed=80,
+            width=24,
+            height=24,
+            color=(200, 80, 80),
+            damage=5,
         )
         zone = pygame.Rect(400, 400, 200, 200)
         enemy = Enemy(500, 500, stats, IdleBehavior(), zone)
@@ -186,10 +197,16 @@ class TestDropLoot:
 
         # Много убийств для статистической проверки
         from src.entities.pickup import HeartPickup, CoinPickup
+
         for i in range(50):
             stats = EnemyStats(
-                name='Heavy', max_health=1, speed=80,
-                width=24, height=24, color=(200, 80, 80), damage=5
+                name="Heavy",
+                max_health=1,
+                speed=80,
+                width=24,
+                height=24,
+                color=(200, 80, 80),
+                damage=5,
             )
             zone = pygame.Rect(400, 400, 200, 200)
             e = Enemy(500 + i, 500, stats, IdleBehavior(), zone)
@@ -214,10 +231,16 @@ class TestDropLoot:
         player.max_health = 10  # HP полное
 
         from src.entities.pickup import HeartPickup, CoinPickup
+
         for i in range(50):
             stats = EnemyStats(
-                name='Heavy', max_health=1, speed=80,
-                width=24, height=24, color=(200, 80, 80), damage=5
+                name="Heavy",
+                max_health=1,
+                speed=80,
+                width=24,
+                height=24,
+                color=(200, 80, 80),
+                damage=5,
             )
             zone = pygame.Rect(400, 400, 200, 200)
             e = Enemy(500 + i, 500, stats, IdleBehavior(), zone)
@@ -247,8 +270,13 @@ class TestMeleeKillBonus:
     def _kill_light_enemy(self, enemy_manager, pickup_manager, is_melee):
         pickup_manager.pickups.clear()
         stats = EnemyStats(
-            name='Light', max_health=1, speed=80,
-            width=24, height=24, color=(200, 80, 80), damage=5
+            name="Light",
+            max_health=1,
+            speed=80,
+            width=24,
+            height=24,
+            color=(200, 80, 80),
+            damage=5,
         )
         zone = pygame.Rect(400, 400, 200, 200)
         enemy = Enemy(500, 500, stats, IdleBehavior(), zone)
@@ -282,8 +310,9 @@ class TestMeleeKillBonus:
         двумя убийствами - is_melee, значит и разница в монетах - от бонуса."""
         from src.entities.pickup import CoinPickup
 
-        with patch('random.random', return_value=0.0), \
-                patch('random.randint', return_value=2):
+        with patch("random.random", return_value=0.0), patch(
+            "random.randint", return_value=2
+        ):
             self._kill_light_enemy(enemy_manager, pickup_manager, is_melee=True)
             melee_coins = sum(
                 1 for p in pickup_manager.pickups if isinstance(p, CoinPickup)
@@ -302,8 +331,13 @@ class TestAmmoDrop:
 
     def _kill_light_enemy(self, enemy_manager, pickup_manager, player=None):
         stats = EnemyStats(
-            name='Light', max_health=1, speed=80,
-            width=24, height=24, color=(200, 80, 80), damage=5
+            name="Light",
+            max_health=1,
+            speed=80,
+            width=24,
+            height=24,
+            color=(200, 80, 80),
+            damage=5,
         )
         zone = pygame.Rect(400, 400, 200, 200)
         enemy = Enemy(500, 500, stats, IdleBehavior(), zone)
@@ -314,7 +348,7 @@ class TestAmmoDrop:
     def test_ammo_drops_when_chance_triggers(self, enemy_manager, pickup_manager):
         from src.entities.pickup import AmmoPickup
 
-        with patch('random.random', return_value=0.0):  # проходит любой chance-ролл
+        with patch("random.random", return_value=0.0):  # проходит любой chance-ролл
             self._kill_light_enemy(enemy_manager, pickup_manager)
 
         ammo_pickups = [p for p in pickup_manager.pickups if isinstance(p, AmmoPickup)]
@@ -325,7 +359,7 @@ class TestAmmoDrop:
     def test_ammo_does_not_drop_when_chance_fails(self, enemy_manager, pickup_manager):
         from src.entities.pickup import AmmoPickup
 
-        with patch('random.random', return_value=0.999):  # заведомо выше любого chance
+        with patch("random.random", return_value=0.999):  # заведомо выше любого chance
             self._kill_light_enemy(enemy_manager, pickup_manager)
 
         ammo_pickups = [p for p in pickup_manager.pickups if isinstance(p, AmmoPickup)]
@@ -344,6 +378,7 @@ class TestAmmoDrop:
 
     def test_ammo_pickup_visual_tiers_do_not_crash(self):
         from src.entities.pickup import AmmoPickup
+
         screen = pygame.Surface((200, 200))
         for amount in (3, 15, 40):
             AmmoPickup(50, 50, ammo_type="bullets", amount=amount).draw(screen, 0, 0)
@@ -436,4 +471,3 @@ class TestEnemySeparation:
         enemy_manager._apply_separation()
         enemy_manager.enemies = [_make_enemy()]
         enemy_manager._apply_separation()
-

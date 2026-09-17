@@ -4,6 +4,7 @@ Tests for v0.3.2 SaveLoadMenu UI logic.
 Тестируем только логику handle_input/refresh без вызовов draw, чтобы
 не зависеть от фактического экрана.
 """
+
 import os
 
 import pytest
@@ -18,7 +19,7 @@ from src.world.world import World
 
 @pytest.fixture(autouse=True, scope="module")
 def _pygame_init():
-    os.environ['SDL_VIDEODRIVER'] = 'dummy'
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
     pygame.init()
     pygame.display.set_mode((800, 600))
     yield
@@ -26,15 +27,13 @@ def _pygame_init():
 
 
 @pytest.fixture()
-def save_system(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    return SaveSystem()
+def save_system(tmp_path):
+    return SaveSystem(tmp_path / "saves")
 
 
 @pytest.fixture()
-def world():
-    return World(map_file=os.path.join(
-        "F:/HOME/game_zelda/data", "main_world.txt"))
+def world(main_world_path):
+    return World(map_file=str(main_world_path))
 
 
 @pytest.fixture()
@@ -52,12 +51,11 @@ def _motion(pos):
 
 
 def _click(pos, button=1):
-    return pygame.event.Event(
-        pygame.MOUSEBUTTONDOWN, {"pos": pos, "button": button}
-    )
+    return pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": pos, "button": button})
 
 
 # --- LOAD mode ----------------------------------------------------------
+
 
 def test_load_mode_empty(save_system):
     menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)
@@ -69,7 +67,7 @@ def test_load_mode_empty(save_system):
 
 
 def test_load_mode_lists_quicksave_and_slots(save_system, player, world):
-    save_system.save_game(player, world)            # quicksave
+    save_system.save_game(player, world)  # quicksave
     save_system.save_to_slot(2, player, world)
     save_system.save_to_slot(5, player, world)
 
@@ -114,6 +112,7 @@ def test_load_mode_navigation(save_system, player, world):
 
 # --- SAVE mode ----------------------------------------------------------
 
+
 def test_save_mode_shows_all_10_slots(save_system):
     menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
     assert len(menu.entries) == 10
@@ -128,9 +127,7 @@ def test_save_mode_enter_empty_slot_no_modal(save_system):
     assert menu.modal is None
 
 
-def test_save_mode_enter_filled_slot_opens_overwrite_modal(
-    save_system, player, world
-):
+def test_save_mode_enter_filled_slot_opens_overwrite_modal(save_system, player, world):
     save_system.save_to_slot(1, player, world)
     menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
     # курсор на slot_01 — он теперь занят
@@ -151,9 +148,7 @@ def test_save_mode_enter_filled_slot_opens_overwrite_modal(
     assert menu.modal is None
 
 
-def test_save_mode_delete_filled_slot_modal_then_confirm(
-    save_system, player, world
-):
+def test_save_mode_delete_filled_slot_modal_then_confirm(save_system, player, world):
     save_system.save_to_slot(1, player, world)
     menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
     # курсор на slot_01 (заполнен)
@@ -203,16 +198,17 @@ def test_set_mode_resets_state(save_system, player, world):
     assert len(menu.entries) == 10
 
 
-def test_invalid_mode_raises():
+def test_invalid_mode_raises(save_system):
     with pytest.raises(ValueError):
-        SaveLoadMenu(SaveSystem(), mode="bogus")
+        SaveLoadMenu(save_system, mode="bogus")
 
 
 # --- Autosave entries (v0.3.3) ------------------------------------------
 
+
 def test_load_mode_lists_autosaves_after_quicksave(save_system, player, world):
     """Автосейвы попадают в LOAD-меню между quicksave и manual-слотами."""
-    save_system.save_game(player, world)               # quicksave
+    save_system.save_game(player, world)  # quicksave
     save_system.autosave(player, world, reason="periodic")
     save_system.autosave(player, world, reason="level_up")
     save_system.save_to_slot(1, player, world)
@@ -247,8 +243,9 @@ def test_load_mode_delete_autosave_via_modal(save_system, player, world):
 
 # --- Mouse support (game_zelda#67) ---------------------------------------
 
+
 def _get_width_height():
-    return get_config('WIDTH'), get_config('HEIGHT')
+    return get_config("WIDTH"), get_config("HEIGHT")
 
 
 def test_mouse_hover_selects_row(save_system, player, world):
@@ -288,9 +285,7 @@ def test_mouse_click_outside_rows_does_nothing(save_system, player, world):
     assert menu.selected_index == 0
 
 
-def test_mouse_click_yes_button_confirms_overwrite_modal(
-    save_system, player, world
-):
+def test_mouse_click_yes_button_confirms_overwrite_modal(save_system, player, world):
     save_system.save_to_slot(1, player, world)
     menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_SAVE)
     # Открываем модалку перезаписи через Enter (курсор на занятом слоте 01)
@@ -317,9 +312,7 @@ def test_mouse_click_no_button_cancels_modal(save_system, player, world):
     assert menu.modal is None
 
 
-def test_mouse_ignored_while_modal_open_except_buttons(
-    save_system, player, world
-):
+def test_mouse_ignored_while_modal_open_except_buttons(save_system, player, world):
     save_system.save_to_slot(1, player, world)
     save_system.save_to_slot(2, player, world)
     menu = SaveLoadMenu(save_system, mode=SaveLoadMenu.MODE_LOAD)

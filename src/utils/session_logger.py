@@ -4,6 +4,7 @@ SessionLogger - отдельный класс для записи логов о�
 Single Responsibility: создание лог-файла, запись сообщений с уровнями,
 закрытие при завершении. Не знает про pygame и игровой цикл.
 """
+
 import os
 import datetime
 
@@ -13,13 +14,14 @@ class SessionLogger:
 
     IMPORTANT_LEVELS = ("IMPORTANT", "ERROR", "WARNING")
 
-    def __init__(self, log_dir: str = "logs"):
+    def __init__(self, log_dir: str = None):
+        log_dir = log_dir or os.environ.get("GAME_ZELDA_LOG_DIR", "logs")
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.filename = os.path.join(log_dir, f"game_session_{timestamp}.log")
-        self._file = open(self.filename, 'w', encoding='utf-8')
+        self._file = open(self.filename, "w", encoding="utf-8")
         self._file.write(
             f"=== ИГРОВАЯ СЕССИЯ НАЧАЛАСЬ: "
             f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n\n"
@@ -42,4 +44,3 @@ class SessionLogger:
         """Закрыть файл логов. Безопасно вызывать повторно."""
         if self._file and not self._file.closed:
             self._file.close()
-

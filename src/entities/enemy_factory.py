@@ -16,7 +16,6 @@ import pygame
 
 from src.entities.enemy import Enemy, LightEnemy, HeavyEnemy, FastEnemy, BossEnemy
 
-
 # Тип фабричной функции: (x, y, patrol_zone) -> Enemy
 EnemyFactoryFunc = Callable[[float, float, pygame.Rect], Enemy]
 

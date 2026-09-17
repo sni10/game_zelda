@@ -4,6 +4,7 @@
 неинтерактивное превью, закрытие по Esc. Тестируем только логику
 handle_input (через синтетические pygame-события), не draw().
 """
+
 import os
 
 import pytest
@@ -18,7 +19,7 @@ from src.ui.inventory_screen import InventoryScreen
 
 @pytest.fixture(autouse=True, scope="module")
 def _pygame_init():
-    os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
     pygame.init()
     pygame.display.set_mode((800, 600))
     load_config()
@@ -52,6 +53,7 @@ def _mouse_up(pos, button=1):
 
 # --- Esc/I/Tab ---------------------------------------------------------------
 
+
 def test_escape_returns_close_action(screen_ui, player):
     action = screen_ui.handle_input(_key(pygame.K_ESCAPE), player)
     assert action == {"type": "close"}
@@ -78,6 +80,7 @@ def test_escape_clears_in_progress_drag(screen_ui, player):
 
 
 # --- Drag-and-drop между слотами --------------------------------------------
+
 
 def test_drag_and_drop_swaps_slots(screen_ui, player):
     rects = screen_ui._slot_rects()
@@ -128,6 +131,7 @@ def test_right_click_ignored(screen_ui, player):
 
 # --- Locked-слоты (ещё не разлоченные) --------------------------------------
 
+
 def test_locked_slot_does_not_start_drag(screen_ui, player):
     """У player 3 разлоченных слота - слот с индексом 3 (4-й) ещё locked,
     из него нельзя тащить оружие."""
@@ -147,6 +151,7 @@ def test_cannot_drop_onto_locked_slot(screen_ui, player):
 
 
 # --- Каталог оружия (замена убранному Tab) ----------------------------------
+
 
 def test_drag_from_catalog_onto_slot_sets_weapon(screen_ui, player):
     catalog_rects = screen_ui._catalog_rects()
@@ -186,6 +191,7 @@ def test_all_catalog_weapons_have_rects(screen_ui):
 
 # --- Геометрия ---------------------------------------------------------------
 
+
 def test_slot_rects_always_show_max_slots(screen_ui, player):
     """Слотов всегда MAX_WEAPON_SLOTS (8), независимо от того, сколько
     игрок уже разлочил - недостающие рисуются locked (см. draw())."""
@@ -196,19 +202,27 @@ def test_slot_rects_always_show_max_slots(screen_ui, player):
 def test_slot_rects_do_not_overlap(screen_ui):
     rects = screen_ui._slot_rects()
     for i in range(len(rects) - 1):
-        assert not rects[i].colliderect(rects[i + 1]) or rects[i].right <= rects[i + 1].left
+        assert (
+            not rects[i].colliderect(rects[i + 1])
+            or rects[i].right <= rects[i + 1].left
+        )
 
 
 def test_catalog_rects_do_not_overlap(screen_ui):
     rects = screen_ui._catalog_rects()
     for i in range(len(rects) - 1):
-        assert not rects[i].colliderect(rects[i + 1]) or rects[i].right <= rects[i + 1].left
+        assert (
+            not rects[i].colliderect(rects[i + 1])
+            or rects[i].right <= rects[i + 1].left
+        )
 
 
 # --- Броня (issue #63) -------------------------------------------------------
 
+
 def test_armor_bar_rects_one_per_slot(screen_ui):
     from src.entities.armor import SLOT_NAMES
+
     rects = screen_ui._armor_bar_rects()
     assert len(rects) == len(SLOT_NAMES)
 
@@ -228,6 +242,7 @@ def test_draw_reflects_depleted_armor_shield(screen_ui, player):
 
 
 # --- draw() smoke ------------------------------------------------------------
+
 
 def test_draw_does_not_crash(screen_ui, player):
     screen = pygame.display.get_surface()

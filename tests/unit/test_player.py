@@ -1,6 +1,7 @@
 """
 Tests for the Player class
 """
+
 import math
 import pytest
 import pygame
@@ -13,29 +14,29 @@ from src.world.terrain import TerrainTile, TerrainType
 
 class TestPlayer:
     """Test cases for Player class"""
-    
+
     @classmethod
     def setup_class(cls):
         """Set up pygame for testing"""
-        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ["SDL_VIDEODRIVER"] = "dummy"
         pygame.init()
-        
+
     @classmethod
     def teardown_class(cls):
         """Clean up pygame"""
         pygame.quit()
-        
+
     def setup_method(self):
         """Set up test fixtures"""
         self.player = Player(100, 100)
-        
+
         # Create a mock world for testing
         self.mock_world = MagicMock()
         self.mock_world.width = 1000
         self.mock_world.height = 1000
         self.mock_world.check_collision.return_value = False
         self.mock_world.get_terrain_at.return_value = None
-        
+
     def test_player_initialization(self):
         """Test player initializes with correct values"""
         assert self.player.x == 100
@@ -43,10 +44,10 @@ class TestPlayer:
         assert self.player.width == 32
         assert self.player.height == 32
         assert self.player.speed == 120
-        assert self.player.facing_direction == 'down'
+        assert self.player.facing_direction == "down"
         assert self.player.attacking == False
         assert isinstance(self.player.rect, pygame.Rect)
-        
+
     def test_player_movement_forward_follows_aim(self):
         """W двигает игрока вперёд - вдоль текущего направления прицела,
         не по фиксированной мировой оси (танковое управление)."""
@@ -93,8 +94,7 @@ class TestPlayer:
     def test_arrow_keys_do_not_move_player(self):
         """Стрелки больше не двигают игрока - только WASD (относительно
         прицела)."""
-        keys = self._press(pygame.K_LEFT, pygame.K_RIGHT,
-                           pygame.K_UP, pygame.K_DOWN)
+        keys = self._press(pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN)
         self.player.handle_input(keys)
         assert self.player.direction_x == 0
         assert self.player.direction_y == 0
@@ -110,30 +110,30 @@ class TestPlayer:
             pygame.K_d: False,
             pygame.K_w: False,
             pygame.K_s: False,
-            pygame.K_SPACE: True
+            pygame.K_SPACE: True,
         }
-        
-        with patch('pygame.time.get_ticks', return_value=1000):
+
+        with patch("pygame.time.get_ticks", return_value=1000):
             self.player.handle_input(keys)
-            
+
         assert self.player.attacking == True
-        
+
     def test_player_update_movement(self):
         """Test player position updates correctly"""
         initial_x = self.player.x
         initial_y = self.player.y
-        
+
         # Set movement direction
         self.player.direction_x = 1
         self.player.direction_y = 0
-        
+
         # Update with 1 second delta time
         self.player.update(1.0, self.mock_world)
-        
+
         # Player should have moved right by speed * dt
         assert self.player.x == initial_x + 120  # speed * 1.0 second
         assert self.player.y == initial_y
-        
+
     def test_player_world_boundaries(self):
         """Test player respects world boundaries"""
         # Test left boundary
@@ -141,50 +141,50 @@ class TestPlayer:
         self.player.direction_x = -1
         self.player.update(1.0, self.mock_world)
         assert self.player.x >= 0
-        
+
         # Test right boundary
         self.player.x = 950  # Close to right edge (1000 - 32 - some margin)
         self.player.direction_x = 1
         self.player.update(1.0, self.mock_world)
         assert self.player.x <= 1000 - self.player.width
-        
+
     def test_player_attack_duration(self):
         """Test attack duration and cooldown"""
-        with patch('pygame.time.get_ticks') as mock_time:
+        with patch("pygame.time.get_ticks") as mock_time:
             # Start attack
             mock_time.return_value = 1000
             self.player.try_attack()
             assert self.player.attacking == True
-            
+
             # During attack
             mock_time.return_value = 1200  # 200ms later
             self.player.update(0.2, self.mock_world)
             assert self.player.attacking == True
-            
+
             # After attack duration
             mock_time.return_value = 1400  # 400ms later (past 300ms duration)
             self.player.update(0.2, self.mock_world)
             assert self.player.attacking == False
-            
+
     def test_player_attack_cooldown(self):
         """Test attack cooldown prevents rapid attacks"""
-        with patch('pygame.time.get_ticks') as mock_time:
+        with patch("pygame.time.get_ticks") as mock_time:
             # First attack
             mock_time.return_value = 1000
             self.player.try_attack()
             assert self.player.attacking == True
-            
+
             # Try to attack again immediately (should fail due to cooldown)
             mock_time.return_value = 1050  # 50ms later (less than 100ms cooldown)
             self.player.attacking = False  # Reset attacking state
             self.player.try_attack()
             assert self.player.attacking == False
-            
+
             # Try to attack after cooldown
             mock_time.return_value = 1150  # 150ms later (past 100ms cooldown)
             self.player.try_attack()
             assert self.player.attacking == True
-            
+
     def test_player_get_attack_rect(self):
         """Test attack rectangle calculation for all 8 directions.
 
@@ -193,7 +193,17 @@ class TestPlayer:
         Главное - симметрия: для всех направлений возвращается валидный rect.
         """
         from src.entities.weapons import DIRECTION_VECTORS
-        directions = ['up', 'down', 'left', 'right', 'up_left', 'up_right', 'down_left', 'down_right']
+
+        directions = [
+            "up",
+            "down",
+            "left",
+            "right",
+            "up_left",
+            "up_right",
+            "down_left",
+            "down_right",
+        ]
         expected_w = self.player.current_weapon.rect_width
         expected_h = self.player.current_weapon.rect_height
 
@@ -210,46 +220,47 @@ class TestPlayer:
         self.player.attacking = False
         attack_rect = self.player.get_attack_rect()
         assert attack_rect is None
-        
+
     def test_player_draw(self):
         """Test player drawing doesn't crash"""
         # Create a dummy surface
         surface = pygame.Surface((800, 600))
-        
+
         # Test drawing without attacking
         self.player.draw(surface, 0, 0)
-        
+
         # Test drawing while attacking
         self.player.attacking = True
         self.player.draw(surface, 0, 0)
-        
-        # Should not raise any exceptions
-        assert True
-        
+
+        assert surface.get_bounding_rect().width > 0
+
     def test_player_no_movement_during_attack(self):
         """Test player cannot move while attacking"""
         initial_x = self.player.x
         initial_y = self.player.y
-        
-        with patch('pygame.time.get_ticks') as mock_time:
+
+        with patch("pygame.time.get_ticks") as mock_time:
             # Set up attack timing - attack should still be active
             mock_time.return_value = 1000
             self.player.attacking = True
-            self.player.attack_timer = 800  # Attack started 200ms ago, still within 300ms duration
+            self.player.attack_timer = (
+                800  # Attack started 200ms ago, still within 300ms duration
+            )
             self.player.direction_x = 1
             self.player.direction_y = 1
-            
+
             # Update player
             self.player.update(1.0, self.mock_world)
-            
+
             # Player should not have moved
             assert self.player.x == initial_x
             assert self.player.y == initial_y
 
     def test_player_health_initialization(self):
         """Test player health system initialization"""
-        assert self.player.health == get_config('PLAYER_MAX_HEALTH')
-        assert self.player.max_health == get_config('PLAYER_MAX_HEALTH')
+        assert self.player.health == get_config("PLAYER_MAX_HEALTH")
+        assert self.player.max_health == get_config("PLAYER_MAX_HEALTH")
         assert self.player.damage_cooldown == 1000
         assert self.player.last_damage_time == 0
 
@@ -260,38 +271,40 @@ class TestPlayer:
         swamp_tile.damages_player = True
         swamp_tile.damage_amount = 5
         swamp_tile.speed_modifier = 1.0
-        
+
         # Mock world to return the damaging tile and allow movement
         self.mock_world.get_terrain_at.return_value = swamp_tile
         self.mock_world.check_collision.return_value = False  # Allow movement
-        
-        with patch('pygame.time.get_ticks') as mock_time:
+
+        with patch("pygame.time.get_ticks") as mock_time:
             # First damage - ensure player moves by setting direction and sufficient dt
-            mock_time.return_value = 1001  # Must be > damage_cooldown (1000) for first damage
+            mock_time.return_value = (
+                1001  # Must be > damage_cooldown (1000) for first damage
+            )
             initial_health = self.player.health
             initial_x = self.player.x
             self.player.direction_x = 1
             self.player.direction_y = 0
-            
+
             self.player.update(0.1, self.mock_world)
-            
+
             # Verify player actually moved
             assert self.player.x > initial_x
             # Health should decrease
             assert self.player.health == initial_health - 5
-            
+
             # Try to take damage again immediately (should be blocked by cooldown)
             mock_time.return_value = 1500  # 500ms later (less than 1000ms cooldown)
             current_health = self.player.health
             self.player.update(0.1, self.mock_world)
-            
+
             # Health should not decrease due to cooldown
             assert self.player.health == current_health
-            
+
             # Take damage after cooldown
             mock_time.return_value = 2100  # 1100ms later (past 1000ms cooldown)
             self.player.update(0.1, self.mock_world)
-            
+
             # Health should decrease again
             assert self.player.health == current_health - 5
 
@@ -301,20 +314,22 @@ class TestPlayer:
         sand_tile = MagicMock()
         sand_tile.damages_player = False
         sand_tile.speed_modifier = 0.5
-        
+
         # Mock world to return the slowing tile
         self.mock_world.get_terrain_at.return_value = sand_tile
-        
+
         initial_x = self.player.x
         self.player.direction_x = 1
         self.player.direction_y = 0
-        
+
         # Update with slowing terrain
         self.player.update(1.0, self.mock_world)
-        
+
         # Player should move at half speed (120 * 0.5 = 60)
         expected_x = initial_x + 60
-        assert abs(self.player.x - expected_x) < 1  # Allow small floating point differences
+        assert (
+            abs(self.player.x - expected_x) < 1
+        )  # Allow small floating point differences
 
     # --- Прицел мышью (360°, "как турель") ---------------------------------
 
@@ -324,26 +339,26 @@ class TestPlayer:
         player_screen_x = self.player.x - camera_x + self.player.width / 2
         player_screen_y = self.player.y - camera_y + self.player.height / 2
         mouse_pos = (int(player_screen_x + dx_screen), int(player_screen_y + dy_screen))
-        with patch('pygame.mouse.get_pos', return_value=mouse_pos):
+        with patch("pygame.mouse.get_pos", return_value=mouse_pos):
             self.player.update_aim(camera_x, camera_y)
 
     def test_update_aim_right(self):
         self._aim_at_screen_offset(100, 0)
         assert self.player.aim_dx == pytest.approx(1.0, abs=0.01)
         assert self.player.aim_dy == pytest.approx(0.0, abs=0.01)
-        assert self.player.facing_direction == 'right'
+        assert self.player.facing_direction == "right"
 
     def test_update_aim_down(self):
         self._aim_at_screen_offset(0, 100)
         assert self.player.aim_dx == pytest.approx(0.0, abs=0.01)
         assert self.player.aim_dy == pytest.approx(1.0, abs=0.01)
-        assert self.player.facing_direction == 'down'
+        assert self.player.facing_direction == "down"
 
     def test_update_aim_up_left_diagonal(self):
         self._aim_at_screen_offset(-100, -100)
         assert self.player.aim_dx == pytest.approx(-0.707, abs=0.01)
         assert self.player.aim_dy == pytest.approx(-0.707, abs=0.01)
-        assert self.player.facing_direction == 'up_left'
+        assert self.player.facing_direction == "up_left"
 
     def test_update_aim_arbitrary_angle_not_bucketed_for_geometry(self):
         """Главное отличие от старой системы: 37° - не один из 8 углов, но
@@ -357,7 +372,7 @@ class TestPlayer:
     def test_update_aim_accounts_for_camera_offset(self):
         # Курсор в фиксированной точке экрана, но камера сдвинута - вектор
         # должен быть рассчитан относительно экранной (не мировой) позиции.
-        with patch('pygame.mouse.get_pos', return_value=(300, 100)):
+        with patch("pygame.mouse.get_pos", return_value=(300, 100)):
             self.player.update_aim(camera_x=50, camera_y=0)
         # player screen x = 100 - 50 + 16 = 66; курсор на 300 -> явно вправо
         assert self.player.aim_dx > 0.9
@@ -383,24 +398,26 @@ class TestPlayer:
         """Test player health cannot go below zero"""
         # Set low health
         self.player.health = 3
-        
+
         # Create a high-damage terrain tile
         damage_tile = MagicMock()
         damage_tile.damages_player = True
         damage_tile.damage_amount = 10  # More damage than current health
         damage_tile.speed_modifier = 1.0
-        
+
         # Mock world to return the damaging tile and allow movement
         self.mock_world.get_terrain_at.return_value = damage_tile
         self.mock_world.check_collision.return_value = False  # Allow movement
-        
-        with patch('pygame.time.get_ticks') as mock_time:
-            mock_time.return_value = 1001  # Must be > damage_cooldown (1000) for first damage
+
+        with patch("pygame.time.get_ticks") as mock_time:
+            mock_time.return_value = (
+                1001  # Must be > damage_cooldown (1000) for first damage
+            )
             initial_x = self.player.x
             self.player.direction_x = 1
             self.player.direction_y = 0
             self.player.update(0.1, self.mock_world)
-            
+
             # Verify player actually moved
             assert self.player.x > initial_x
             # Health should be 0, not negative
@@ -410,22 +427,22 @@ class TestPlayer:
         """Test diagonal movement is properly normalized"""
         initial_x = self.player.x
         initial_y = self.player.y
-        
+
         # Set diagonal movement
         self.player.direction_x = 1
         self.player.direction_y = 1
-        
+
         # Simulate handle_input normalization
         self.player.direction_x *= 0.707  # 1/sqrt(2)
         self.player.direction_y *= 0.707
-        
+
         self.player.update(1.0, self.mock_world)
-        
+
         # Check that diagonal movement is normalized (approximately 120 * 0.707 = 84.84)
         expected_distance = 120 * 0.707
         actual_distance_x = self.player.x - initial_x
         actual_distance_y = self.player.y - initial_y
-        
+
         assert abs(actual_distance_x - expected_distance) < 1
         assert abs(actual_distance_y - expected_distance) < 1
 
@@ -433,15 +450,15 @@ class TestPlayer:
         """Test is_dead method"""
         # Player should be alive initially
         assert not self.player.is_dead()
-        
+
         # Set health to 0 - player should be dead
         self.player.health = 0
         assert self.player.is_dead()
-        
+
         # Set health below 0 - player should still be dead
         self.player.health = -10
         assert self.player.is_dead()
-        
+
         # Restore health - player should be alive
         self.player.health = 50
         assert not self.player.is_dead()
@@ -449,22 +466,22 @@ class TestPlayer:
     def test_player_take_damage_method(self):
         """Test take_damage method"""
         initial_health = self.player.health
-        
+
         # Take damage
         damage = 20
         self.player.take_damage(damage)
         assert self.player.health == initial_health - damage
-        
+
         # Take more damage (reset iframe to allow second hit)
         self.player._stats.iframe_timer = 0
         self.player.take_damage(30)
         assert self.player.health == initial_health - damage - 30
-        
+
         # Take massive damage - health should not go below 0
         self.player._stats.iframe_timer = 0
         self.player.take_damage(1000)
         assert self.player.health == 0
-        
+
         # Dead player should not take more damage
         self.player.take_damage(10)
         assert self.player.health == 0
@@ -541,11 +558,14 @@ class TestPlayer:
     def _press(self, *codes):
         """Имитация состояния клавиатуры: возвращает dict-like, где True
         для перечисленных кодов и False для остальных."""
+
         class _Keys:
             def __init__(self, pressed):
                 self.pressed = set(pressed)
+
             def __getitem__(self, code):
                 return code in self.pressed
+
         return _Keys(codes)
 
     def test_sprint_default_off(self):
@@ -594,6 +614,6 @@ class TestPlayer:
         normal_dist = normal_x - 500
         sprint_dist = sprint_x - 500
         ratio = sprint_dist / normal_dist
-        assert abs(ratio - self.player.sprint_multiplier) < 0.001, (
-            f"Sprint ratio {ratio} != multiplier {self.player.sprint_multiplier}"
-        )
+        assert (
+            abs(ratio - self.player.sprint_multiplier) < 0.001
+        ), f"Sprint ratio {ratio} != multiplier {self.player.sprint_multiplier}"

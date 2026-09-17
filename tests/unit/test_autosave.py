@@ -12,8 +12,8 @@ Tests for v0.3.3 autosaves in SaveSystem.
 - autosave_reason пропагандируется в metadata.reason.
 - has_saves() в MainMenu учитывает saves/autosave/.
 """
+
 import os
-import time
 
 import pytest
 import pygame
@@ -28,21 +28,20 @@ def _pygame_init():
     # NB: не вызываем pygame.quit() в teardown — глобальный шрифт в
     # src/utils/debug.py кэшируется и без него тесты test_debug_coverage,
     # которые идут после, падают с SDL access violation.
-    os.environ['SDL_VIDEODRIVER'] = 'dummy'
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
     pygame.init()
     pygame.display.set_mode((800, 600))
     yield
 
 
 @pytest.fixture()
-def save_system(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    return SaveSystem()
+def save_system(tmp_path):
+    return SaveSystem(tmp_path / "saves")
 
 
 @pytest.fixture()
-def world():
-    return World(map_file=os.path.join("F:/HOME/game_zelda/data", "main_world.txt"))
+def world(main_world_path):
+    return World(map_file=str(main_world_path))
 
 
 @pytest.fixture()
@@ -52,13 +51,14 @@ def player():
 
 # --- Базовый round-trip --------------------------------------------------
 
+
 def test_autosave_creates_file_in_autosave_subdir(save_system, player, world):
     ok = save_system.autosave(player, world, reason="periodic", limit=3)
     assert ok is True
-    expected = os.path.join("saves", "autosave", "autosave_01.json")
+    expected = save_system._autosave_filepath(1)
     assert os.path.exists(expected)
     # quicksave не создан
-    assert not os.path.exists(os.path.join("saves", "quicksave.json"))
+    assert not save_system.quicksave_exists()
 
 
 def test_autosave_round_trip(save_system, player, world):
@@ -80,16 +80,20 @@ def test_load_from_empty_autosave_returns_none(save_system):
 
 # --- list_autosaves / metadata ------------------------------------------
 
+
 def test_list_autosaves_empty(save_system):
     assert save_system.list_autosaves() == []
 
 
-def test_list_autosaves_sorted_newest_first(save_system, player, world):
+def test_list_autosaves_sorted_newest_first(
+    save_system, player, world, deterministic_mtime
+):
     save_system.autosave(player, world, reason="periodic", limit=3)
-    time.sleep(0.05)  # гарантируем разный mtime
+    deterministic_mtime(save_system._autosave_filepath(1))
     save_system.autosave(player, world, reason="level_up", limit=3)
-    time.sleep(0.05)
+    deterministic_mtime(save_system._autosave_filepath(2))
     save_system.autosave(player, world, reason="periodic", limit=3)
+    deterministic_mtime(save_system._autosave_filepath(3))
 
     items = save_system.list_autosaves()
     assert len(items) == 3
@@ -111,26 +115,26 @@ def test_get_latest_autosave_metadata(save_system, player, world):
 
 # --- Ротация -------------------------------------------------------------
 
-def test_autosave_rotation_overwrites_oldest(save_system, player, world):
+
+def test_autosave_rotation_overwrites_oldest(
+    save_system, player, world, deterministic_mtime
+):
     # Заполняем 2 слота при limit=2
     save_system.autosave(player, world, reason="periodic", limit=2)
-    time.sleep(0.05)
+    deterministic_mtime(save_system._autosave_filepath(1))
     save_system.autosave(player, world, reason="periodic", limit=2)
+    deterministic_mtime(save_system._autosave_filepath(2))
 
     # Третий autosave должен затереть самый старый (slot_01)
-    old_mtime_1 = os.path.getmtime(
-        os.path.join("saves", "autosave", "autosave_01.json")
-    )
-    time.sleep(0.05)
+    old_mtime_1 = os.path.getmtime(save_system._autosave_filepath(1))
     save_system.autosave(player, world, reason="level_up", limit=2)
+    deterministic_mtime(save_system._autosave_filepath(1))
 
     items = save_system.list_autosaves()
     # Всё ещё ровно 2 файла
     assert len(items) == 2
     # slot_01 был самым старым → теперь обновлён
-    new_mtime_1 = os.path.getmtime(
-        os.path.join("saves", "autosave", "autosave_01.json")
-    )
+    new_mtime_1 = os.path.getmtime(save_system._autosave_filepath(1))
     assert new_mtime_1 > old_mtime_1
     # И именно у него теперь reason=level_up
     slot_1_meta = next(i for i in items if i["slot_id"] == 1)
@@ -149,36 +153,34 @@ def test_autosave_enforce_limit_removes_tail(save_system, player, world):
     items = save_system.list_autosaves()
     slot_ids = sorted(i["slot_id"] for i in items)
     assert slot_ids == [1, 2]
-    assert not os.path.exists(
-        os.path.join("saves", "autosave", "autosave_03.json")
-    )
+    assert not os.path.exists(save_system._autosave_filepath(3))
 
 
 # --- delete_autosave -----------------------------------------------------
 
+
 def test_delete_autosave(save_system, player, world):
     save_system.autosave(player, world)
-    assert os.path.exists(
-        os.path.join("saves", "autosave", "autosave_01.json")
-    )
+    assert os.path.exists(save_system._autosave_filepath(1))
     assert save_system.delete_autosave(1) is True
-    assert not os.path.exists(
-        os.path.join("saves", "autosave", "autosave_01.json")
-    )
+    assert not os.path.exists(save_system._autosave_filepath(1))
     # Повторное удаление = False
     assert save_system.delete_autosave(1) is False
 
 
 # --- has_saves в MainMenu ------------------------------------------------
 
-def test_main_menu_has_saves_picks_autosave_only(tmp_path, monkeypatch,
-                                                 save_system, player, world):
+
+def test_main_menu_has_saves_picks_autosave_only(
+    tmp_path, monkeypatch, save_system, player, world
+):
     # save_system fixture уже сделал chdir в tmp_path
     save_system.autosave(player, world)
 
     # Импортируем MainMenu лениво (нужен pygame.font)
     from src.ui.menu import MainMenu
-    menu = MainMenu()
+
+    menu = MainMenu(saves_dir=save_system.saves_dir)
     assert menu.has_saves() is True
     # Quicksave не должен влиять — его нет
     assert menu.has_quicksave() is False

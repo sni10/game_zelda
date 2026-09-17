@@ -30,11 +30,11 @@ API ↔ Game:
         {"type": "delete_autosave", "slot_id": N}    — подтверждили удаление автосейва (v0.3.3)
         {"type": "back"}                             — Esc, выход из меню
 """
+
 import pygame
 from datetime import datetime
 
 from src.core.config_loader import get_config, get_color
-
 
 # Особое значение selected_index для строки quicksave (в load-режиме)
 QUICKSAVE_INDEX = -1
@@ -113,46 +113,51 @@ class SaveLoadMenu:
         if self.mode == self.MODE_LOAD:
             qs_meta = self.save_system.get_quicksave_metadata()
             if qs_meta is not None:
-                entries.append({
-                    "kind": "quicksave",
-                    "slot_id": None,
-                    "label": "🕒 Быстрое сохранение (F5)",
-                    "meta": qs_meta,
-                })
+                entries.append(
+                    {
+                        "kind": "quicksave",
+                        "slot_id": None,
+                        "label": "🕒 Быстрое сохранение (F5)",
+                        "meta": qs_meta,
+                    }
+                )
             # Автосейвы (v0.3.3) — после quicksave, до manual-слотов.
-            list_autosaves = getattr(
-                self.save_system, "list_autosaves", None
-            )
+            list_autosaves = getattr(self.save_system, "list_autosaves", None)
             if callable(list_autosaves):
                 for meta in list_autosaves():
                     reason = meta.get("reason") or ""
                     label = f"🕐 Автосохранение #{meta['slot_id']:02d}"
                     if reason:
                         label = f"{label}  ({reason})"
-                    entries.append({
-                        "kind": "autosave",
-                        "slot_id": meta["slot_id"],
-                        "label": label,
-                        "meta": meta,
-                    })
+                    entries.append(
+                        {
+                            "kind": "autosave",
+                            "slot_id": meta["slot_id"],
+                            "label": label,
+                            "meta": meta,
+                        }
+                    )
             for meta in self.save_system.list_manual_saves():
-                entries.append({
-                    "kind": "manual",
-                    "slot_id": meta["slot_id"],
-                    "label": f"Слот {meta['slot_id']:02d}",
-                    "meta": meta,
-                })
+                entries.append(
+                    {
+                        "kind": "manual",
+                        "slot_id": meta["slot_id"],
+                        "label": f"Слот {meta['slot_id']:02d}",
+                        "meta": meta,
+                    }
+                )
         else:  # MODE_SAVE
-            existing = {m["slot_id"]: m
-                        for m in self.save_system.list_manual_saves()}
+            existing = {m["slot_id"]: m for m in self.save_system.list_manual_saves()}
             for slot_id in range(1, self.save_system.MANUAL_SLOT_LIMIT + 1):
                 meta = existing.get(slot_id)
-                entries.append({
-                    "kind": "manual",
-                    "slot_id": slot_id,
-                    "label": f"Слот {slot_id:02d}",
-                    "meta": meta,  # None если пустой
-                })
+                entries.append(
+                    {
+                        "kind": "manual",
+                        "slot_id": slot_id,
+                        "label": f"Слот {slot_id:02d}",
+                        "meta": meta,  # None если пустой
+                    }
+                )
 
         self.entries = entries
         if self.selected_index >= len(self.entries):
@@ -163,7 +168,9 @@ class SaveLoadMenu:
     def handle_input(self, event):
         """Обработать ввод (клавиатура и мышь), вернуть action dict / None."""
         if event.type not in (
-            pygame.KEYDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN
+            pygame.KEYDOWN,
+            pygame.MOUSEMOTION,
+            pygame.MOUSEBUTTONDOWN,
         ):
             return None
 
@@ -184,14 +191,10 @@ class SaveLoadMenu:
                 return None
 
             if event.key == pygame.K_UP:
-                self.selected_index = (
-                    (self.selected_index - 1) % len(self.entries)
-                )
+                self.selected_index = (self.selected_index - 1) % len(self.entries)
                 return None
             if event.key == pygame.K_DOWN:
-                self.selected_index = (
-                    (self.selected_index + 1) % len(self.entries)
-                )
+                self.selected_index = (self.selected_index + 1) % len(self.entries)
                 return None
 
             entry = self.entries[self.selected_index]
@@ -206,8 +209,8 @@ class SaveLoadMenu:
         if not self.entries:
             return None
 
-        width = get_config('WIDTH')
-        height = get_config('HEIGHT')
+        width = get_config("WIDTH")
+        height = get_config("HEIGHT")
 
         if event.type == pygame.MOUSEMOTION:
             for i, _y, rect in self._entry_rows(width, height):
@@ -263,8 +266,8 @@ class SaveLoadMenu:
 
     def _handle_modal_mouse(self, pos):
         """Клик мышью по кнопкам Да/Нет в модалке подтверждения."""
-        width = get_config('WIDTH')
-        height = get_config('HEIGHT')
+        width = get_config("WIDTH")
+        height = get_config("HEIGHT")
         yes_rect, no_rect = self._modal_button_rects(width, height)
         if yes_rect.collidepoint(pos):
             return self._confirm_modal()
@@ -273,9 +276,7 @@ class SaveLoadMenu:
         return None
 
     def _confirm_modal(self):
-        modal, slot_id, kind = (
-            self.modal, self.modal_slot_id, self.modal_kind
-        )
+        modal, slot_id, kind = (self.modal, self.modal_slot_id, self.modal_kind)
         self.modal = None
         self.modal_slot_id = None
         self.modal_kind = None
@@ -295,21 +296,18 @@ class SaveLoadMenu:
     # --- Отрисовка ---------------------------------------------------------
 
     def draw(self, screen):
-        screen.fill(get_color('BLACK'))
-        width = get_config('WIDTH')
-        height = get_config('HEIGHT')
+        screen.fill(get_color("BLACK"))
+        width = get_config("WIDTH")
+        height = get_config("HEIGHT")
 
         # Заголовок
-        title = ("ЗАГРУЗИТЬ ИГРУ" if self.mode == self.MODE_LOAD
-                 else "СОХРАНИТЬ ИГРУ")
-        title_surf = self.font_title.render(title, True, get_color('WHITE'))
+        title = "ЗАГРУЗИТЬ ИГРУ" if self.mode == self.MODE_LOAD else "СОХРАНИТЬ ИГРУ"
+        title_surf = self.font_title.render(title, True, get_color("WHITE"))
         screen.blit(title_surf, title_surf.get_rect(center=(width // 2, 60)))
 
         # Список
         if not self.entries:
-            empty = self.font_item.render(
-                "Сохранений нет", True, get_color('GRAY')
-            )
+            empty = self.font_item.render("Сохранений нет", True, get_color("GRAY"))
             screen.blit(empty, empty.get_rect(center=(width // 2, height // 2)))
         else:
             self._draw_entries(screen, width, height)
@@ -320,14 +318,18 @@ class SaveLoadMenu:
         # Модалка
         if self.modal == "overwrite":
             self._draw_modal(
-                screen, width, height,
+                screen,
+                width,
+                height,
                 title="Перезаписать сохранение?",
                 detail=self._slot_detail(self.modal_slot_id),
                 hint="Y — да, N/Esc — нет",
             )
         elif self.modal == "delete":
             self._draw_modal(
-                screen, width, height,
+                screen,
+                width,
+                height,
                 title="Удалить сохранение?",
                 detail=self._slot_detail(self.modal_slot_id, self.modal_kind),
                 hint="Y — да, N/Esc — нет",
@@ -347,8 +349,7 @@ class SaveLoadMenu:
         if len(self.entries) > max_rows:
             start = max(
                 0,
-                min(self.selected_index - max_rows // 2,
-                    len(self.entries) - max_rows),
+                min(self.selected_index - max_rows // 2, len(self.entries) - max_rows),
             )
         end = min(len(self.entries), start + max_rows)
 
@@ -364,10 +365,9 @@ class SaveLoadMenu:
             entry = self.entries[i]
 
             selected = i == self.selected_index
-            color = (get_color('YELLOW') if selected
-                     else get_color('WHITE'))
+            color = get_color("YELLOW") if selected else get_color("WHITE")
             if selected:
-                pygame.draw.rect(screen, get_color('DARK_GRAY'), rect, 2)
+                pygame.draw.rect(screen, get_color("DARK_GRAY"), rect, 2)
 
             label_surf = self.font_item.render(entry["label"], True, color)
             screen.blit(label_surf, (width // 2 - 300, y))
@@ -376,10 +376,10 @@ class SaveLoadMenu:
             meta = entry["meta"]
             if meta is None:
                 meta_text = "-- Пустой слот --"
-                meta_color = get_color('GRAY')
+                meta_color = get_color("GRAY")
             elif not meta.get("valid", True):
                 meta_text = "[повреждён]"
-                meta_color = get_color('RED') if 'RED' in dir() else (200, 80, 80)
+                meta_color = get_color("RED") if "RED" in dir() else (200, 80, 80)
                 meta_color = (200, 80, 80)
             else:
                 meta_text = (
@@ -388,7 +388,7 @@ class SaveLoadMenu:
                     f"|  HP {meta.get('hp', 0)}/{meta.get('max_hp', 0)}  "
                     f"|  ⏱ {_format_playtime(meta.get('play_time', 0.0))}"
                 )
-                meta_color = get_color('GRAY')
+                meta_color = get_color("GRAY")
             meta_surf = self.font_meta.render(meta_text, True, meta_color)
             screen.blit(meta_surf, (width // 2 - 300, y + 28))
 
@@ -405,7 +405,7 @@ class SaveLoadMenu:
             ]
         y = height - 40
         for line in lines:
-            surf = self.font_help.render(line, True, get_color('GRAY'))
+            surf = self.font_help.render(line, True, get_color("GRAY"))
             screen.blit(surf, surf.get_rect(center=(width // 2, y)))
             y += 22
 
@@ -415,9 +415,7 @@ class SaveLoadMenu:
         Общая геометрия для draw() и хит-теста мыши.
         """
         box_w, box_h = 600, 220
-        return pygame.Rect(
-            (width - box_w) // 2, (height - box_h) // 2, box_w, box_h
-        )
+        return pygame.Rect((width - box_w) // 2, (height - box_h) // 2, box_w, box_h)
 
     def _modal_button_rects(self, width, height):
         """Прямоугольники кнопок «Да»/«Нет» модалки подтверждения."""
@@ -437,36 +435,29 @@ class SaveLoadMenu:
         screen.blit(overlay, (0, 0))
 
         box = self._modal_box_rect(width, height)
-        pygame.draw.rect(screen, get_color('DARK_GRAY'), box)
-        pygame.draw.rect(screen, get_color('WHITE'), box, 2)
+        pygame.draw.rect(screen, get_color("DARK_GRAY"), box)
+        pygame.draw.rect(screen, get_color("WHITE"), box, 2)
 
-        title_surf = self.font_modal.render(title, True, get_color('WHITE'))
-        screen.blit(title_surf,
-                    title_surf.get_rect(center=(width // 2, box.y + 45)))
+        title_surf = self.font_modal.render(title, True, get_color("WHITE"))
+        screen.blit(title_surf, title_surf.get_rect(center=(width // 2, box.y + 45)))
 
-        detail_surf = self.font_meta.render(detail, True, get_color('GRAY'))
-        screen.blit(detail_surf,
-                    detail_surf.get_rect(center=(width // 2, box.y + 95)))
+        detail_surf = self.font_meta.render(detail, True, get_color("GRAY"))
+        screen.blit(detail_surf, detail_surf.get_rect(center=(width // 2, box.y + 95)))
 
         # Кликабельные кнопки "Да"/"Нет"
         yes_rect, no_rect = self._modal_button_rects(width, height)
         mouse_pos = pygame.mouse.get_pos()
         for rect, label in ((yes_rect, "Да (Y)"), (no_rect, "Нет (N)")):
             hovered = rect.collidepoint(mouse_pos)
-            pygame.draw.rect(screen, get_color('DARK_GRAY'), rect)
-            border_color = (
-                get_color('YELLOW') if hovered else get_color('GRAY')
-            )
+            pygame.draw.rect(screen, get_color("DARK_GRAY"), rect)
+            border_color = get_color("YELLOW") if hovered else get_color("GRAY")
             pygame.draw.rect(screen, border_color, rect, 2)
-            label_color = (
-                get_color('YELLOW') if hovered else get_color('WHITE')
-            )
+            label_color = get_color("YELLOW") if hovered else get_color("WHITE")
             label_surf = self.font_help.render(label, True, label_color)
             screen.blit(label_surf, label_surf.get_rect(center=rect.center))
 
-        hint_surf = self.font_help.render(hint, True, get_color('GRAY'))
-        screen.blit(hint_surf,
-                    hint_surf.get_rect(center=(width // 2, box.y + 200)))
+        hint_surf = self.font_help.render(hint, True, get_color("GRAY"))
+        screen.blit(hint_surf, hint_surf.get_rect(center=(width // 2, box.y + 200)))
 
     def _slot_detail(self, slot_id, kind=None) -> str:
         if slot_id is None:
@@ -477,8 +468,7 @@ class SaveLoadMenu:
             if kind is not None and e.get("kind") != kind:
                 continue
             m = e["meta"]
-            prefix = ("Автосейв" if e.get("kind") == "autosave"
-                      else "Слот")
+            prefix = "Автосейв" if e.get("kind") == "autosave" else "Слот"
             return (
                 f"{prefix} {slot_id:02d} — "
                 f"{_format_timestamp(m.get('timestamp', ''))}, "

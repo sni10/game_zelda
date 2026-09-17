@@ -4,12 +4,12 @@ MapLoader - загрузка и парсинг ASCII-карт из файлов.
 Single Responsibility: файловый I/O + парсинг символов в TerrainTile.
 Не знает про рендер, камеру или мир — только читает текст и создаёт тайлы.
 """
+
 import os
 
 from src.world.terrain import TerrainType, TerrainTile
 
-
-OVERLAY_SUFFIX = '_overlay'  # main_world.txt -> main_world_overlay.txt
+OVERLAY_SUFFIX = "_overlay"  # main_world.txt -> main_world_overlay.txt
 
 
 def _parse_map_lines(map_lines):
@@ -52,8 +52,8 @@ def _parse_map_lines(map_lines):
 def _read_map_file(filename):
     """Прочитать ASCII-карту из файла. Возвращает список строк или None."""
     try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            return [ln.rstrip('\n\r') for ln in f.readlines()]
+        with open(filename, "r", encoding="utf-8") as f:
+            return [ln.rstrip("\n\r") for ln in f.readlines()]
     except FileNotFoundError:
         return None
 
@@ -95,4 +95,3 @@ def load_map_from_file(filename):
         overlay_tiles, _, _ = _parse_map_lines(overlay_lines)
 
     return ground_tiles, overlay_tiles, player_start_x, player_start_y
-

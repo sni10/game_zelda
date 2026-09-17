@@ -1,13 +1,17 @@
 """
 PickupManager — спавн, обновление и рендер всех пикапов в мире.
 """
+
 from typing import List
 import pygame
 
 from src.entities.pickup import (
-    Pickup, HeartPickup, CoinPickup, XPOrbPickup, AmmoPickup,
+    Pickup,
+    HeartPickup,
+    CoinPickup,
+    XPOrbPickup,
+    AmmoPickup,
 )
-
 
 # Регистр (type_id -> класс) для сериализации/десериализации.
 # При добавлении нового типа пикапа достаточно зарегистрировать его здесь.
@@ -82,4 +86,3 @@ class PickupManager:
             if "ammo_type" in item and hasattr(p, "ammo_type"):
                 p.ammo_type = item["ammo_type"]
             self.pickups.append(p)
-

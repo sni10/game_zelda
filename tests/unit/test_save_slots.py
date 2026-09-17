@@ -11,10 +11,9 @@ Tests for v0.3.2 manual save slots in SaveSystem.
 - Quicksave и manual-слоты физически разделены (saves/quicksave.json
   vs saves/manual/slot_NN.json).
 """
+
 import os
 import json
-import shutil
-import tempfile
 
 import pytest
 import pygame
@@ -28,7 +27,7 @@ from src.core.game_stats import GameStats
 
 @pytest.fixture(autouse=True, scope="module")
 def _pygame_init():
-    os.environ['SDL_VIDEODRIVER'] = 'dummy'
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
     pygame.init()
     pygame.display.set_mode((800, 600))
     yield
@@ -36,15 +35,14 @@ def _pygame_init():
 
 
 @pytest.fixture()
-def save_system(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    return SaveSystem()
+def save_system(tmp_path):
+    return SaveSystem(tmp_path / "saves")
 
 
 @pytest.fixture()
-def world():
+def world(main_world_path):
     # Грузим реальный main_world.txt, чтобы EnemyManager был валиден.
-    return World(map_file=os.path.join("F:/HOME/game_zelda/data", "main_world.txt"))
+    return World(map_file=str(main_world_path))
 
 
 @pytest.fixture()
@@ -54,13 +52,14 @@ def player():
 
 # --- Базовый round-trip --------------------------------------------------
 
+
 def test_save_to_slot_creates_file_in_manual_subdir(save_system, player, world):
     ok = save_system.save_to_slot(1, player, world)
     assert ok is True
-    expected = os.path.join("saves", "manual", "slot_01.json")
+    expected = save_system._slot_filepath(1)
     assert os.path.exists(expected)
     # quicksave не должен быть создан
-    assert not os.path.exists(os.path.join("saves", "quicksave.json"))
+    assert not save_system.quicksave_exists()
 
 
 def test_load_from_slot_round_trip(save_system, player, world):
@@ -82,6 +81,7 @@ def test_load_from_empty_slot_returns_none(save_system):
 
 # --- Лимит ---------------------------------------------------------------
 
+
 def test_save_to_slot_out_of_range_rejected(save_system, player, world):
     assert save_system.save_to_slot(0, player, world) is False
     assert save_system.save_to_slot(11, player, world) is False
@@ -97,6 +97,7 @@ def test_save_to_all_10_slots(save_system, player, world):
 
 
 # --- list_manual_saves ---------------------------------------------------
+
 
 def test_list_manual_saves_empty(save_system):
     assert save_system.list_manual_saves() == []
@@ -122,6 +123,7 @@ def test_list_manual_saves_partial(save_system, player, world):
 
 # --- delete_slot ---------------------------------------------------------
 
+
 def test_delete_slot(save_system, player, world):
     save_system.save_to_slot(4, player, world)
     assert save_system.slot_exists(4) is True
@@ -132,6 +134,7 @@ def test_delete_slot(save_system, player, world):
 
 
 # --- get_free_slot / get_quicksave_metadata ------------------------------
+
 
 def test_get_free_slot_returns_first_empty(save_system, player, world):
     assert save_system.get_free_slot() == 1
@@ -160,6 +163,7 @@ def test_get_quicksave_metadata_after_save_game(save_system, player, world):
 
 # --- Метаданные / повреждённые файлы -------------------------------------
 
+
 def test_read_metadata_corrupt_file(save_system, tmp_path):
     bad = tmp_path / "broken.json"
     bad.write_text("{not json")
@@ -173,7 +177,7 @@ def test_list_manual_saves_includes_corrupt_with_valid_false(
 ):
     save_system.save_to_slot(1, player, world)
     # Подменяем slot_02 на мусор
-    bad_path = os.path.join("saves", "manual", "slot_02.json")
+    bad_path = save_system._slot_filepath(2)
     with open(bad_path, "w", encoding="utf-8") as f:
         f.write("{garbage")
     saves = save_system.list_manual_saves()
@@ -184,6 +188,7 @@ def test_list_manual_saves_includes_corrupt_with_valid_false(
 
 # --- Полная сериализация: с pickups и game_stats -------------------------
 
+
 def test_round_trip_with_full_state(save_system, player, world):
     pm = PickupManager()
     gs = GameStats()
@@ -191,8 +196,11 @@ def test_round_trip_with_full_state(save_system, player, world):
     gs.distance_traveled = 1234.5
 
     ok = save_system.save_to_slot(
-        6, player, world,
-        game_stats=gs, pickup_manager=pm,
+        6,
+        player,
+        world,
+        game_stats=gs,
+        pickup_manager=pm,
         enemy_manager=world.enemy_manager,
     )
     assert ok is True

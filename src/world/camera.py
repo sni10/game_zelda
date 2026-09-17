@@ -36,4 +36,3 @@ class Camera:
         # Ограничиваем камеру границами мира
         self.x = max(0, min(self.x, world_width - screen_width))
         self.y = max(0, min(self.y, world_height - screen_height))
-

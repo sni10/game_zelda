@@ -1,6 +1,7 @@
 """
 Тесты для Pickup и PickupManager.
 """
+
 import pytest
 import pygame
 from unittest.mock import MagicMock, patch
@@ -90,4 +91,3 @@ class TestPickupManager:
         # Но при dist < magnet_radius и коллизии — собирается
         # В нашем случае dist=40 < 60, значит магнит работает
         assert p.x != old_x or p.collected
-

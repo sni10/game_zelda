@@ -5,6 +5,7 @@ Single Responsibility: рисовать UI поверх игрового мир�
 монеты, уровень, полоска XP).
 Не знает про игровой цикл, ввод или мир — только про player и screen.
 """
+
 import pygame
 
 from src.core.config_loader import get_color
@@ -17,9 +18,9 @@ class HUD:
     # чтобы полоски друг под другом не разъезжались при правке одной из них.
     SHIELD_BAR_HEIGHT = 8
     _GAP = 2
-    HEALTH_BAR_Y = 10 + SHIELD_BAR_HEIGHT + _GAP        # 20
-    _XP_BAR_Y = HEALTH_BAR_Y + 20 + _GAP                # 42
-    _WEAPON_SLOTS_START_Y = _XP_BAR_Y + 5 + 8           # 55
+    HEALTH_BAR_Y = 10 + SHIELD_BAR_HEIGHT + _GAP  # 20
+    _XP_BAR_Y = HEALTH_BAR_Y + 20 + _GAP  # 42
+    _WEAPON_SLOTS_START_Y = _XP_BAR_Y + 5 + 8  # 55
 
     def __init__(self):
         # Шрифты создаются один раз — pygame.font.Font дорогой по инициализации
@@ -53,11 +54,11 @@ class HUD:
         pct = player.shield / max_shield if max_shield > 0 else 0
         fill_w = int(bar_width * pct)
 
-        pygame.draw.rect(screen, get_color('DARK_GRAY'),
-                         (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(
+            screen, get_color("DARK_GRAY"), (bar_x, bar_y, bar_width, bar_height)
+        )
         if fill_w > 0:
-            pygame.draw.rect(screen, (60, 140, 255),
-                             (bar_x, bar_y, fill_w, bar_height))
+            pygame.draw.rect(screen, (60, 140, 255), (bar_x, bar_y, fill_w, bar_height))
 
     def _draw_health_bar(self, screen: pygame.Surface, player) -> None:
         """Полоска здоровья игрока - под полоской щита."""
@@ -69,26 +70,35 @@ class HUD:
         health_w = int(bar_width * pct)
 
         # Фон
-        pygame.draw.rect(screen, get_color('DARK_GRAY'),
-                         (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(
+            screen, get_color("DARK_GRAY"), (bar_x, bar_y, bar_width, bar_height)
+        )
         # Заливка
         if health_w > 0:
-            pygame.draw.rect(screen, get_color('GREEN'),
-                             (bar_x, bar_y, health_w, bar_height))
+            pygame.draw.rect(
+                screen, get_color("GREEN"), (bar_x, bar_y, health_w, bar_height)
+            )
         # Рамка
         pygame.draw.rect(
-            screen, get_color('WHITE'),
-            (bar_x - border_width, bar_y - border_width,
-             bar_width + border_width * 2, bar_height + border_width * 2),
+            screen,
+            get_color("WHITE"),
+            (
+                bar_x - border_width,
+                bar_y - border_width,
+                bar_width + border_width * 2,
+                bar_height + border_width * 2,
+            ),
             border_width,
         )
         # Текст HP
         hp_text = f"{player.health}/{player.max_health}"
-        text_surf = self._font_pct.render(hp_text, True, get_color('WHITE'))
+        text_surf = self._font_pct.render(hp_text, True, get_color("WHITE"))
         screen.blit(
             text_surf,
-            (bar_x + bar_width + 10,
-             bar_y + (bar_height - text_surf.get_height()) // 2),
+            (
+                bar_x + bar_width + 10,
+                bar_y + (bar_height - text_surf.get_height()) // 2,
+            ),
         )
 
     def _draw_xp_bar(self, screen: pygame.Surface, player) -> None:
@@ -121,25 +131,25 @@ class HUD:
             slot_x = start_x + i * (slot_size + gap)
             slot_rect = pygame.Rect(slot_x, start_y, slot_size, slot_size)
 
-            pygame.draw.rect(screen, get_color('DARK_GRAY'), slot_rect)
+            pygame.draw.rect(screen, get_color("DARK_GRAY"), slot_rect)
             inner = slot_rect.inflate(-8, -8)
             pygame.draw.rect(screen, weapon.color, inner)
 
-            is_active = (i == player.current_weapon_index)
-            border_color = get_color('WHITE') if is_active else (60, 60, 60)
+            is_active = i == player.current_weapon_index
+            border_color = get_color("WHITE") if is_active else (60, 60, 60)
             border_w = 3 if is_active else 1
             pygame.draw.rect(screen, border_color, slot_rect, border_w)
 
-            digit_surf = self._font_digit.render(str(i + 1), True, get_color('WHITE'))
+            digit_surf = self._font_digit.render(str(i + 1), True, get_color("WHITE"))
             screen.blit(digit_surf, (slot_x + 3, start_y + 2))
 
         # Имя активного оружия под слотами
         active = player.current_weapon
-        name_surf = self._font_name.render(active.name, True, get_color('WHITE'))
+        name_surf = self._font_name.render(active.name, True, get_color("WHITE"))
         screen.blit(name_surf, (start_x, start_y + slot_size + 4))
 
         # Патроны (магазин/резерв) - только у оружия с ammo_type, справа от имени
-        if getattr(active, 'ammo_type', None):
+        if getattr(active, "ammo_type", None):
             ammo_text = f"{player.magazine_count()}/{player.reserve_count()}"
             ammo_surf = self._font_name.render(ammo_text, True, (220, 200, 140))
             screen.blit(

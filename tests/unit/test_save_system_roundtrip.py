@@ -8,16 +8,15 @@ Round-trip тесты для SaveSystem (issue v0.3.1 — фикс F9).
 - GameStats (kills/distance/playtime),
 - валидацию схемы (повреждённый JSON не должен крашить).
 """
+
 import os
 import json
-import tempfile
-import shutil
 
 import pygame
 import pytest
 
 # Headless pygame
-os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 from src.core.config_loader import load_config
 from src.core.game_stats import GameStats
@@ -37,12 +36,8 @@ def _pygame_init():
 
 
 @pytest.fixture
-def tmp_save_system():
-    tmpdir = tempfile.mkdtemp()
-    ss = SaveSystem()
-    ss.saves_dir = tmpdir
-    yield ss
-    shutil.rmtree(tmpdir, ignore_errors=True)
+def tmp_save_system(tmp_path):
+    return SaveSystem(tmp_path / "saves")
 
 
 class _MockWorld:
@@ -52,6 +47,7 @@ class _MockWorld:
     не вызывает collision-проверки (только в spawn_enemy). Поэтому
     width/height достаточно.
     """
+
     def __init__(self, w=2000, h=2000):
         self.width = w
         self.height = h
@@ -64,6 +60,7 @@ class _MockWorld:
 # ---------------------------------------------------------------------------
 # Player round-trip
 # ---------------------------------------------------------------------------
+
 
 def test_player_roundtrip_full(tmp_save_system):
     """Сохранение/загрузка игрока: позиция, HP, прогрессия, оружие, iframe."""
@@ -135,10 +132,7 @@ def test_player_armor_roundtrip(tmp_save_system):
     # от дефолтного полного щита.
     p.equipment.absorb_damage(600)
 
-    snapshot = {
-        slot: armor.current_shield
-        for slot, armor in p.equipment.slots.items()
-    }
+    snapshot = {slot: armor.current_shield for slot, armor in p.equipment.slots.items()}
     assert p.equipment.total_shield < p.equipment.total_max_shield  # предусловие
 
     assert tmp_save_system.save_game(p, world) is True
@@ -172,6 +166,7 @@ def test_player_armor_backward_compat_without_armor_key(tmp_save_system):
 # ---------------------------------------------------------------------------
 # Pickups round-trip
 # ---------------------------------------------------------------------------
+
 
 def test_pickups_roundtrip(tmp_save_system):
     pm = PickupManager()
@@ -208,6 +203,7 @@ def test_pickups_roundtrip(tmp_save_system):
 # Enemies round-trip
 # ---------------------------------------------------------------------------
 
+
 def test_enemies_roundtrip(tmp_save_system):
     world = _MockWorld()
     em = EnemyManager(world)
@@ -223,8 +219,11 @@ def test_enemies_roundtrip(tmp_save_system):
 
     snapshot_count = len(em.enemies)
     snapshot_first = (
-        first.stats.name.lower(), first.x, first.y,
-        first.health, first.attack_cooldown_timer,
+        first.stats.name.lower(),
+        first.x,
+        first.y,
+        first.health,
+        first.attack_cooldown_timer,
     )
 
     p = Player(0, 0)
@@ -254,6 +253,7 @@ def test_enemies_roundtrip(tmp_save_system):
 # GameStats round-trip
 # ---------------------------------------------------------------------------
 
+
 def test_game_stats_roundtrip(tmp_save_system):
     gs = GameStats()
     gs.enemies_killed = 17
@@ -269,6 +269,7 @@ def test_game_stats_roundtrip(tmp_save_system):
     gs.last_y = 600
     # Эмулируем что мы наиграли минуту
     import time
+
     gs.start_time = time.time() - 60.0
 
     p = Player(0, 0)
@@ -301,6 +302,7 @@ def test_game_stats_roundtrip(tmp_save_system):
 # Schema validation
 # ---------------------------------------------------------------------------
 
+
 def test_load_invalid_json_returns_none(tmp_save_system):
     bad_path = os.path.join(tmp_save_system.saves_dir, "bad.json")
     with open(bad_path, "w", encoding="utf-8") as f:
@@ -318,10 +320,13 @@ def test_load_missing_player_returns_none(tmp_save_system):
 def test_load_player_wrong_types_returns_none(tmp_save_system):
     bad_path = os.path.join(tmp_save_system.saves_dir, "wrong.json")
     with open(bad_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "version": "1.1",
-            "player": {"x": "not-a-number", "y": 0, "health": 10, "max_health": 10},
-        }, f)
+        json.dump(
+            {
+                "version": "1.1",
+                "player": {"x": "not-a-number", "y": 0, "health": 10, "max_health": 10},
+            },
+            f,
+        )
     assert tmp_save_system.load_game("wrong.json") is None
 
 
@@ -329,17 +334,25 @@ def test_load_legacy_v1_0_still_works(tmp_save_system):
     """Старый сейв без enemies/pickups/game_stats всё ещё открывается."""
     legacy_path = os.path.join(tmp_save_system.saves_dir, "legacy.json")
     with open(legacy_path, "w", encoding="utf-8") as f:
-        json.dump({
-            "version": "1.0",
-            "timestamp": "2026-04-26T12:00:00Z",
-            "player": {
-                "x": 100, "y": 200,
-                "health": 5, "max_health": 10,
-                "facing_direction": "down",
-                "level": 2, "xp": 5, "coins": 10, "damage_bonus": 0,
+        json.dump(
+            {
+                "version": "1.0",
+                "timestamp": "2026-04-26T12:00:00Z",
+                "player": {
+                    "x": 100,
+                    "y": 200,
+                    "health": 5,
+                    "max_health": 10,
+                    "facing_direction": "down",
+                    "level": 2,
+                    "xp": 5,
+                    "coins": 10,
+                    "damage_bonus": 0,
+                },
+                "world": {"current_map": "main_world"},
             },
-            "world": {"current_map": "main_world"},
-        }, f)
+            f,
+        )
     data = tmp_save_system.load_game("legacy.json")
     assert data is not None
 

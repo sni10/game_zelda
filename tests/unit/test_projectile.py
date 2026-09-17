@@ -1,12 +1,13 @@
 """
 Тесты для Projectile / ProjectileManager (реальная баллистика Rifle, v0.4.0b).
 """
+
 import os
 import pytest
 import pygame
 from unittest.mock import MagicMock
 
-os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 pygame.init()
 
 from src.entities.projectile import Projectile
@@ -17,8 +18,13 @@ from src.entities.enemy_ai import IdleBehavior
 
 def _make_enemy(x=200, y=100, hp=1):
     stats = EnemyStats(
-        name='Test', max_health=hp, speed=80,
-        width=24, height=24, color=(200, 80, 80), damage=1,
+        name="Test",
+        max_health=hp,
+        speed=80,
+        width=24,
+        height=24,
+        color=(200, 80, 80),
+        damage=1,
     )
     zone = pygame.Rect(0, 0, 400, 400)
     return Enemy(x, y, stats, IdleBehavior(), zone)

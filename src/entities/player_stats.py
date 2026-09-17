@@ -5,6 +5,7 @@ Single Responsibility: хранить HP/XP/Level/Coins, наносить/леч
 проверять смерть, управлять i-frames и level-up.
 Не знает про pygame, ввод, рендер или мир.
 """
+
 from src.core.config_loader import get_config
 from src.entities.armor import EquipmentSlots, default_equipment
 
@@ -25,7 +26,7 @@ class PlayerStats:
 
         # i-frames
         self.iframe_timer = 0.0
-        self._iframe_duration = get_config('COMBAT_PLAYER_IFRAME_DURATION', 0.6)
+        self._iframe_duration = get_config("COMBAT_PLAYER_IFRAME_DURATION", 0.6)
 
         # Прогрессия
         self.level = 1
@@ -38,19 +39,21 @@ class PlayerStats:
         self.on_level_up = None
 
         # Конфиг прогрессии (кеш)
-        self._xp_base = get_config('PROGRESSION_XP_BASE', 20)
-        self._xp_growth = get_config('PROGRESSION_XP_GROWTH', 1.5)
-        self._hp_per_level = get_config('PROGRESSION_HP_PER_LEVEL', 1)
-        self._damage_per_level = get_config('PROGRESSION_DAMAGE_PER_LEVEL', 0)
-        self._heal_on_level_up = get_config('PROGRESSION_HEAL_ON_LEVEL_UP', True)
-        self._max_level = get_config('PROGRESSION_MAX_LEVEL', 20)
+        self._xp_base = get_config("PROGRESSION_XP_BASE", 20)
+        self._xp_growth = get_config("PROGRESSION_XP_GROWTH", 1.5)
+        self._hp_per_level = get_config("PROGRESSION_HP_PER_LEVEL", 1)
+        self._damage_per_level = get_config("PROGRESSION_DAMAGE_PER_LEVEL", 0)
+        self._heal_on_level_up = get_config("PROGRESSION_HEAL_ON_LEVEL_UP", True)
+        self._max_level = get_config("PROGRESSION_MAX_LEVEL", 20)
 
     # --- HP -----------------------------------------------------------------
 
     def is_dead(self) -> bool:
         return self.health <= 0
 
-    def take_damage(self, damage: int, game_stats=None, ignore_iframes: bool = False) -> bool:
+    def take_damage(
+        self, damage: int, game_stats=None, ignore_iframes: bool = False
+    ) -> bool:
         """Нанести урон. Уважает i-frames (кроме ignore_iframes=True).
         Возвращает True если урон прошёл."""
         if self.is_dead():
@@ -150,10 +153,10 @@ class PlayerStats:
 
 # --- Чистые функции прогрессии -------------------------------------------
 
-def xp_for_next_level(level: int, xp_base: int = 20,
-                      xp_growth: float = 1.5) -> int:
+
+def xp_for_next_level(level: int, xp_base: int = 20, xp_growth: float = 1.5) -> int:
     """Формула XP до следующего уровня: base * (level ** growth)."""
-    return int(xp_base * (level ** xp_growth))
+    return int(xp_base * (level**xp_growth))
 
 
 def unlocked_weapon_slots(level: int, unlock_levels=None) -> int:
@@ -165,5 +168,5 @@ def unlocked_weapon_slots(level: int, unlock_levels=None) -> int:
     уровнях разлочки 3..8 ровно совпадает).
     """
     if unlock_levels is None:
-        unlock_levels = get_config('PROGRESSION_WEAPON_SLOT_UNLOCK_LEVELS', ())
+        unlock_levels = get_config("PROGRESSION_WEAPON_SLOT_UNLOCK_LEVELS", ())
     return 2 + sum(1 for lvl in unlock_levels if level >= lvl)

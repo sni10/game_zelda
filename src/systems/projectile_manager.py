@@ -13,6 +13,7 @@ ProjectileManager - управление летящими снарядами (Pr
 EnemyManager.apply_player_attack) не нужен - снаряд физически не может
 ударить дважды.
 """
+
 from typing import List, Dict
 import math
 
@@ -42,8 +43,8 @@ class ProjectileManager:
         if not self.projectiles:
             return events
 
-        kb_speed = get_config('COMBAT_ENEMY_KNOCKBACK_SPEED', 180)
-        kb_dur = get_config('COMBAT_ENEMY_KNOCKBACK_DURATION', 0.12)
+        kb_speed = get_config("COMBAT_ENEMY_KNOCKBACK_SPEED", 180)
+        kb_dur = get_config("COMBAT_ENEMY_KNOCKBACK_DURATION", 0.12)
 
         for proj in self.projectiles:
             if proj.expired:
@@ -54,7 +55,9 @@ class ProjectileManager:
                 continue
 
             # Границы мира
-            if not (0 <= proj.x <= self.world.width and 0 <= proj.y <= self.world.height):
+            if not (
+                0 <= proj.x <= self.world.width and 0 <= proj.y <= self.world.height
+            ):
                 proj.expired = True
                 continue
 

@@ -13,11 +13,11 @@ class Player:
         self.y = y
         self.width = 32
         self.height = 32
-        
+
         # Скорость движения (как в классической Zelda)
         self.speed = 120  # пикселей в секунду
         # Множитель скорости при удержании Shift.
-        self.sprint_multiplier = get_config('PLAYER_SPRINT_MULTIPLIER')
+        self.sprint_multiplier = get_config("PLAYER_SPRINT_MULTIPLIER")
         self.is_sprinting = False
 
         # Направление движения - результат W/A/S/D относительно направления
@@ -34,10 +34,10 @@ class Player:
         self.aim_dy = 1.0
         # facing_direction - производная строка (ближайшее из 8 названий) для
         # формата сохранений и debug-текста. Не используется боевой геометрией.
-        self.facing_direction = 'down'
+        self.facing_direction = "down"
 
         # Делегаты: здоровье и боевая система
-        self._stats = PlayerStats(get_config('PLAYER_MAX_HEALTH'))
+        self._stats = PlayerStats(get_config("PLAYER_MAX_HEALTH"))
         self._combat = PlayerCombat()
         # Разлочка слотов оружия по уровню - PlayerStats не знает про
         # PlayerCombat, поэтому дёргает Player через колбэк.
@@ -54,8 +54,8 @@ class Player:
         self.knockback_vx = 0.0
         self.knockback_vy = 0.0
         self.knockback_timer = 0.0
-        self._kb_duration = get_config('COMBAT_PLAYER_KNOCKBACK_DURATION', 0.15)
-        self._kb_speed = get_config('COMBAT_PLAYER_KNOCKBACK_SPEED', 220)
+        self._kb_duration = get_config("COMBAT_PLAYER_KNOCKBACK_DURATION", 0.15)
+        self._kb_speed = get_config("COMBAT_PLAYER_KNOCKBACK_SPEED", 220)
 
     # --- Backward-compatible API для здоровья (делегирует PlayerStats) ------
 
@@ -79,7 +79,9 @@ class Player:
         return self._stats.is_dead()
 
     def take_damage(self, damage, game_stats=None, ignore_iframes=False):
-        return self._stats.take_damage(damage, game_stats, ignore_iframes=ignore_iframes)
+        return self._stats.take_damage(
+            damage, game_stats, ignore_iframes=ignore_iframes
+        )
 
     def take_damage_from_enemy(self, damage, game_stats=None):
         return self._stats.take_damage_from_enemy(damage, game_stats)
@@ -278,10 +280,9 @@ class Player:
         self.direction_y = 0
 
         # Спринт
-        self.is_sprinting = (
-            self._is_key_pressed(keys, pygame.K_LSHIFT)
-            or self._is_key_pressed(keys, pygame.K_RSHIFT)
-        )
+        self.is_sprinting = self._is_key_pressed(
+            keys, pygame.K_LSHIFT
+        ) or self._is_key_pressed(keys, pygame.K_RSHIFT)
 
         # W/S - вперёд/назад вдоль вектора прицела (aim_dx, aim_dy).
         forward = 0
@@ -312,8 +313,14 @@ class Player:
             self.try_attack()
 
     _FACING_8WAY = (
-        'right', 'down_right', 'down', 'down_left',
-        'left', 'up_left', 'up', 'up_right',
+        "right",
+        "down_right",
+        "down",
+        "down_left",
+        "left",
+        "up_left",
+        "up",
+        "up_right",
     )
 
     def update_aim(self, camera_x: float, camera_y: float) -> None:
@@ -365,12 +372,14 @@ class Player:
 
         # Движение
         if not self.attacking:
-            current_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
+            current_tile = world.get_terrain_at(
+                self.x + self.width // 2, self.y + self.height // 2
+            )
             speed_modifier = current_tile.speed_modifier if current_tile else 1.0
             sprint = self.sprint_multiplier if self.is_sprinting else 1.0
             armor_mod = 1.0 + self._stats.equipment.total_speed_mod
             effective_speed = self.speed * speed_modifier * sprint * armor_mod
-            
+
             new_x = self.x + self.direction_x * effective_speed * dt
             new_y = self.y + self.direction_y * effective_speed * dt
 
@@ -383,12 +392,16 @@ class Player:
             # при любом отклонении взгляда от перпендикуляра к стене.
             moved = False
             if new_x != self.x:
-                candidate_x = pygame.Rect(int(new_x), int(self.y), self.width, self.height)
+                candidate_x = pygame.Rect(
+                    int(new_x), int(self.y), self.width, self.height
+                )
                 if not world.check_collision(candidate_x):
                     self.x = new_x
                     moved = True
             if new_y != self.y:
-                candidate_y = pygame.Rect(int(self.x), int(new_y), self.width, self.height)
+                candidate_y = pygame.Rect(
+                    int(self.x), int(new_y), self.width, self.height
+                )
                 if not world.check_collision(candidate_y):
                     self.y = new_y
                     moved = True
@@ -397,12 +410,15 @@ class Player:
                 self.rect.x = int(self.x)
                 self.rect.y = int(self.y)
 
-                new_tile = world.get_terrain_at(self.x + self.width//2, self.y + self.height//2)
+                new_tile = world.get_terrain_at(
+                    self.x + self.width // 2, self.y + self.height // 2
+                )
                 if new_tile and new_tile.damages_player:
                     current_time = pygame.time.get_ticks()
                     if current_time - self.last_damage_time > self.damage_cooldown:
-                        self.take_damage(new_tile.damage_amount, game_stats,
-                                        ignore_iframes=True)
+                        self.take_damage(
+                            new_tile.damage_amount, game_stats, ignore_iframes=True
+                        )
                         self.last_damage_time = current_time
 
     # --- Отрисовка ---------------------------------------------------------
@@ -413,16 +429,17 @@ class Player:
         if self.is_invulnerable:
             # ~10 миганий/сек при 60fps: пропускаем каждые 3 кадра
             import time
+
             if int(time.time() * 10) % 2 == 0:
                 # Рисуем полупрозрачно — skip кадра
                 return
 
         screen_x = int(self.x - camera_x)
         screen_y = int(self.y - camera_y)
-        
-        color = get_color('RED') if self.attacking else get_color('GREEN')
+
+        color = get_color("RED") if self.attacking else get_color("GREEN")
         pygame.draw.rect(screen, color, (screen_x, screen_y, self.width, self.height))
-        
+
         # Направление прицела (360°, следует за мышью) - точка на краю
         # игрока вдоль (aim_dx, aim_dy), а не одна из 8 фиксированных позиций.
         center_x = screen_x + self.width // 2
@@ -430,8 +447,7 @@ class Player:
         radius = self.width / 2 - 3
         dot_x = int(center_x + self.aim_dx * radius)
         dot_y = int(center_y + self.aim_dy * radius)
-        pygame.draw.circle(screen, get_color('WHITE'), (dot_x, dot_y), 3)
-
+        pygame.draw.circle(screen, get_color("WHITE"), (dot_x, dot_y), 3)
 
         # Зоны атаки
         if self.attacking:
@@ -441,7 +457,6 @@ class Player:
                     attack_rect.x - camera_x,
                     attack_rect.y - camera_y,
                     attack_rect.width,
-                    attack_rect.height
+                    attack_rect.height,
                 )
                 pygame.draw.rect(screen, weapon.color, attack_screen_rect, 2)
-

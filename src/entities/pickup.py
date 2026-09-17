@@ -8,6 +8,7 @@ Pickup — предметы, выпадающие из врагов.
 
 Каждый пикап рисуется простой геометрией (без спрайтов).
 """
+
 import math
 import pygame
 from abc import ABC, abstractmethod
@@ -23,7 +24,7 @@ class Pickup(ABC):
         self.x = x
         self.y = y
         self.rect = pygame.Rect(int(x), int(y), self.SIZE, self.SIZE)
-        self.lifetime = get_config('PICKUPS_LIFETIME', 30.0)
+        self.lifetime = get_config("PICKUPS_LIFETIME", 30.0)
         self.collected = False
 
     def update(self, dt: float, player) -> None:
@@ -33,8 +34,8 @@ class Pickup(ABC):
             self.collected = True
             return
 
-        magnet_r = get_config('PICKUPS_MAGNET_RADIUS', 60)
-        magnet_s = get_config('PICKUPS_MAGNET_SPEED', 260)
+        magnet_r = get_config("PICKUPS_MAGNET_RADIUS", 60)
+        magnet_s = get_config("PICKUPS_MAGNET_SPEED", 260)
 
         dx = player.x + player.width / 2 - (self.x + self.SIZE / 2)
         dy = player.y + player.height / 2 - (self.y + self.SIZE / 2)
@@ -72,7 +73,7 @@ class HeartPickup(Pickup):
     """Восстанавливает HP."""
 
     def apply(self, player) -> None:
-        amount = get_config('PICKUPS_HEART_HEAL_AMOUNT', 1)
+        amount = get_config("PICKUPS_HEART_HEAL_AMOUNT", 1)
         player.heal(amount)
 
     def draw(self, screen, camera_x, camera_y):
@@ -87,7 +88,7 @@ class CoinPickup(Pickup):
     """Добавляет монету."""
 
     def apply(self, player) -> None:
-        amount = get_config('PICKUPS_COIN_VALUE', 1)
+        amount = get_config("PICKUPS_COIN_VALUE", 1)
         player.stats.add_coins(amount)
 
     def draw(self, screen, camera_x, camera_y):
@@ -115,7 +116,7 @@ class XPOrbPickup(Pickup):
     def __init__(self, x: float, y: float, amount: int = None):
         super().__init__(x, y)
         self.amount = (
-            amount if amount is not None else get_config('PICKUPS_XP_ORB_VALUE', 5)
+            amount if amount is not None else get_config("PICKUPS_XP_ORB_VALUE", 5)
         )
 
     def apply(self, player) -> None:
@@ -136,13 +137,15 @@ class AmmoPickup(Pickup):
     amount - количество; влияет и на визуал (3 условных "размера" одного и
     того же пикапа, без буквенной вложенности ящик->обойма->патрон)."""
 
-    def __init__(self, x: float, y: float, ammo_type: str = "bullets", amount: int = 10):
+    def __init__(
+        self, x: float, y: float, ammo_type: str = "bullets", amount: int = 10
+    ):
         super().__init__(x, y)
         self.ammo_type = ammo_type
         self.amount = amount
 
     def apply(self, player) -> None:
-        cap = get_config('AMMO_RIFLE_RESERVE_CAP', 90)
+        cap = get_config("AMMO_RIFLE_RESERVE_CAP", 90)
         player.add_ammo(self.ammo_type, self.amount, cap)
 
     def draw(self, screen, camera_x, camera_y):
@@ -163,4 +166,3 @@ class AmmoPickup(Pickup):
         else:
             # Патроны - мелкая латунная точка
             pygame.draw.circle(screen, (200, 170, 60), (sx, sy), self.SIZE // 3)
-

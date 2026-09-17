@@ -4,6 +4,7 @@ PlayerCombat - боевые механики игрока.
 Single Responsibility: управлять атакой (старт, таймер, cooldown, attack_id),
 переключение оружий, расчёт зон поражения. Не знает про рендер или мир.
 """
+
 import pygame
 
 from src.core.config_loader import get_config
@@ -43,7 +44,7 @@ class PlayerCombat:
         # у melee/AoE weapon.ammo_type == None, они эту систему не трогают.
         self.magazine: Dict[str, int] = {"bullets": RangedWeapon.magazine_size}
         self.reserve: Dict[str, int] = {
-            "bullets": get_config('AMMO_RIFLE_STARTING_RESERVE', 36)
+            "bullets": get_config("AMMO_RIFLE_STARTING_RESERVE", 36)
         }
 
     @property
@@ -88,7 +89,8 @@ class PlayerCombat:
         if from_index == to_index:
             return False
         self.weapons[from_index], self.weapons[to_index] = (
-            self.weapons[to_index], self.weapons[from_index]
+            self.weapons[to_index],
+            self.weapons[from_index],
         )
         return True
 
@@ -147,11 +149,11 @@ class PlayerCombat:
             if current_time - self.attack_timer > self.current_weapon.duration_ms:
                 self.attacking = False
 
-    def get_attack_rects(self, player_rect: pygame.Rect,
-                         aim_dx: float, aim_dy: float) -> list:
+    def get_attack_rects(
+        self, player_rect: pygame.Rect, aim_dx: float, aim_dy: float
+    ) -> list:
         """Получить зоны поражения текущей атаки в направлении прицела
         (непрерывный вектор, 360° - не только 8 фиксированных направлений)."""
         if not self.attacking:
             return []
         return self.current_weapon.get_attack_rects(player_rect, aim_dx, aim_dy)
-

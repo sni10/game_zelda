@@ -1,26 +1,32 @@
 """
 Тесты системы врагов: HP, AI, фабрика, менеджер.
 """
+
 import os
 import math
 import pytest
 import pygame
 
 # Без окна
-os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 pygame.init()
 
 from src.core.config_loader import load_config
+
 load_config()  # обязательно: статы врагов читаются из конфига
 
 from src.entities.enemy import (
-    Enemy, EnemyStats, LightEnemy, HeavyEnemy, FastEnemy,
+    Enemy,
+    EnemyStats,
+    LightEnemy,
+    HeavyEnemy,
+    FastEnemy,
 )
 from src.entities.enemy_ai import IdleBehavior, PatrolBehavior
 from src.entities.enemy_factory import EnemyFactory, UnknownEnemyTypeError
 
-
 # === Вспомогательные --------------------------------------------------------
+
 
 def make_zone(cx=200, cy=200, radius=64):
     return pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2)
@@ -28,12 +34,20 @@ def make_zone(cx=200, cy=200, radius=64):
 
 def make_test_enemy(hp=3, x=200, y=200):
     """Простой Enemy для тестов HP/урона - без AI движения."""
-    stats = EnemyStats(name='Test', max_health=hp, speed=0,
-                      width=20, height=20, color=(255, 0, 0), damage=1)
+    stats = EnemyStats(
+        name="Test",
+        max_health=hp,
+        speed=0,
+        width=20,
+        height=20,
+        color=(255, 0, 0),
+        damage=1,
+    )
     return Enemy(x, y, stats, IdleBehavior(), make_zone(x, y))
 
 
 # === HP / урон / смерть -----------------------------------------------------
+
 
 class TestEnemyHealth:
     def test_starts_at_max_health(self):
@@ -68,12 +82,20 @@ class TestEnemyHealth:
 
 # === Patrol AI --------------------------------------------------------------
 
+
 class TestPatrolBehavior:
     def test_patrol_stays_inside_zone(self):
         """100 кадров блуждания - враг не выходит за патруль-зону."""
         zone = make_zone(cx=500, cy=500, radius=128)
-        stats = EnemyStats(name='P', max_health=1, speed=200,
-                          width=16, height=16, color=(0, 0, 0), damage=1)
+        stats = EnemyStats(
+            name="P",
+            max_health=1,
+            speed=200,
+            width=16,
+            height=16,
+            color=(0, 0, 0),
+            damage=1,
+        )
         ai = PatrolBehavior()
         # Спавним в центре зоны
         e = Enemy(500, 500, stats, ai, zone)
@@ -82,6 +104,7 @@ class TestPatrolBehavior:
         class _W:
             def check_collision(self, rect):
                 return False
+
         world = _W()
 
         for _ in range(200):
@@ -92,13 +115,21 @@ class TestPatrolBehavior:
     def test_patrol_repaths_on_collision(self):
         """Если упёрся в препятствие - перевыбирает цель."""
         zone = make_zone(cx=500, cy=500, radius=128)
-        stats = EnemyStats(name='P', max_health=1, speed=400,
-                          width=16, height=16, color=(0, 0, 0), damage=1)
+        stats = EnemyStats(
+            name="P",
+            max_health=1,
+            speed=400,
+            width=16,
+            height=16,
+            color=(0, 0, 0),
+            damage=1,
+        )
         e = Enemy(500, 500, stats, PatrolBehavior(), zone)
 
         class _AlwaysBlocked:
             def check_collision(self, rect):
                 return True
+
         # Один update - враг должен перевыбрать цель и НЕ двигаться
         old_x, old_y = e.x, e.y
         e.update(dt=0.1, world=_AlwaysBlocked())
@@ -109,11 +140,19 @@ class TestPatrolBehavior:
         никаких диагоналей. За один update меняется либо x, либо y, но
         не обе координаты одновременно (с точностью до микро-погрешностей)."""
         import random
+
         random.seed(42)  # детерминизм
 
         zone = make_zone(cx=500, cy=500, radius=128)
-        stats = EnemyStats(name='P', max_health=1, speed=80,
-                          width=16, height=16, color=(0, 0, 0), damage=1)
+        stats = EnemyStats(
+            name="P",
+            max_health=1,
+            speed=80,
+            width=16,
+            height=16,
+            color=(0, 0, 0),
+            damage=1,
+        )
         e = Enemy(500, 500, stats, PatrolBehavior(), zone)
 
         class _W:
@@ -128,56 +167,64 @@ class TestPatrolBehavior:
             dy = abs(e.y - old_y)
             # Одна из дельт должна быть ровно 0 (axial движение).
             # Допускаем эпсилон для float-ошибок.
-            assert dx < 1e-6 or dy < 1e-6, (
-                f"Enemy moved diagonally: dx={dx}, dy={dy}"
-            )
+            assert dx < 1e-6 or dy < 1e-6, f"Enemy moved diagonally: dx={dx}, dy={dy}"
 
 
 # === Фабрика ----------------------------------------------------------------
+
 
 class TestEnemyFactory:
     def test_default_types_registered(self):
         """LightEnemy/HeavyEnemy/FastEnemy зарегистрированы при импорте."""
         types = EnemyFactory.registered_types()
-        assert 'light' in types
-        assert 'heavy' in types
-        assert 'fast' in types
+        assert "light" in types
+        assert "heavy" in types
+        assert "fast" in types
 
     def test_create_light(self):
         zone = make_zone()
-        e = EnemyFactory.create('light', 100, 100, zone)
+        e = EnemyFactory.create("light", 100, 100, zone)
         assert isinstance(e, LightEnemy)
         assert e.health == 1  # из config
 
     def test_create_heavy(self):
         zone = make_zone()
-        e = EnemyFactory.create('heavy', 100, 100, zone)
+        e = EnemyFactory.create("heavy", 100, 100, zone)
         assert isinstance(e, HeavyEnemy)
         assert e.health == 3
 
     def test_create_unknown_type_raises(self):
         with pytest.raises(UnknownEnemyTypeError):
-            EnemyFactory.create('dragon', 0, 0, make_zone())
+            EnemyFactory.create("dragon", 0, 0, make_zone())
 
     def test_register_new_type(self):
         """Можно зарегистрировать новый тип без правки старого кода (OCP)."""
+
         # Кастомный фаб
         def make_boss(x, y, zone):
-            stats = EnemyStats(name='Boss', max_health=100, speed=10,
-                              width=64, height=64, color=(0, 0, 0), damage=50)
+            stats = EnemyStats(
+                name="Boss",
+                max_health=100,
+                speed=10,
+                width=64,
+                height=64,
+                color=(0, 0, 0),
+                damage=50,
+            )
             return Enemy(x, y, stats, IdleBehavior(), zone)
 
-        EnemyFactory.register('boss', make_boss)
+        EnemyFactory.register("boss", make_boss)
         try:
-            boss = EnemyFactory.create('boss', 0, 0, make_zone())
+            boss = EnemyFactory.create("boss", 0, 0, make_zone())
             assert boss.health == 100
-            assert boss.stats.name == 'Boss'
+            assert boss.stats.name == "Boss"
         finally:
             # Чистим после теста
-            EnemyFactory._registry.pop('boss', None)
+            EnemyFactory._registry.pop("boss", None)
 
 
 # === Stats из конфига ------------------------------------------------------
+
 
 class TestEnemyStatsFromConfig:
     def test_light_stats_match_config(self):
@@ -198,6 +245,7 @@ class TestEnemyStatsFromConfig:
 
 # === EnemyManager - apply_player_attack ------------------------------------
 
+
 class TestEnemyManagerCombat:
     """Главный инвариант: 1 атака игрока = 1 урон каждому врагу."""
 
@@ -212,6 +260,7 @@ class TestEnemyManagerCombat:
 
             def check_collision(self, rect):
                 return False
+
         m = EnemyManager(_W())
         # Один враг с 3 HP в позиции (200, 200) размером 20x20
         m.enemies.append(make_test_enemy(hp=3, x=200, y=200))
@@ -222,9 +271,15 @@ class TestEnemyManagerCombat:
         target = manager.enemies[0]
         attack_rect = pygame.Rect(195, 195, 30, 30)  # покрывает врага
 
-        h1, k1 = manager.apply_player_attack(attack_id=1, attack_rects=[attack_rect], damage=1)
-        h2, k2 = manager.apply_player_attack(attack_id=1, attack_rects=[attack_rect], damage=1)
-        h3, k3 = manager.apply_player_attack(attack_id=1, attack_rects=[attack_rect], damage=1)
+        h1, k1 = manager.apply_player_attack(
+            attack_id=1, attack_rects=[attack_rect], damage=1
+        )
+        h2, k2 = manager.apply_player_attack(
+            attack_id=1, attack_rects=[attack_rect], damage=1
+        )
+        h3, k3 = manager.apply_player_attack(
+            attack_id=1, attack_rects=[attack_rect], damage=1
+        )
 
         assert (h1, k1) == (1, 0)
         assert (h2, k2) == (0, 0)
@@ -267,6 +322,7 @@ class TestEnemyManagerCombat:
 
 # === EnemyManager - спавн вне зоны видимости ------------------------------
 
+
 class TestEnemyManagerSpawn:
     @pytest.fixture
     def manager(self):
@@ -278,6 +334,7 @@ class TestEnemyManagerSpawn:
 
             def check_collision(self, rect):
                 return False
+
         return EnemyManager(_W())
 
     def test_spawn_outside_visibility(self, manager):
@@ -285,10 +342,10 @@ class TestEnemyManagerSpawn:
         from src.core.config_loader import get_config
 
         player_x, player_y = 2000, 2000
-        min_dist = get_config('ENEMIES_SPAWN_MIN_DISTANCE')
+        min_dist = get_config("ENEMIES_SPAWN_MIN_DISTANCE")
 
         for _ in range(20):
-            e = manager.spawn_enemy('light', player_x, player_y)
+            e = manager.spawn_enemy("light", player_x, player_y)
             assert e is not None
             d = math.hypot(e.x - player_x, e.y - player_y)
             assert d >= min_dist, f"Spawned at distance {d}, min was {min_dist}"
@@ -300,9 +357,9 @@ class TestEnemyManagerSpawn:
         manager.spawn_initial(player_x=2000, player_y=2000)
         by_type = manager.alive_by_type()
 
-        assert by_type.get('light', 0) == get_config('ENEMIES_INITIAL_COUNT_LIGHT')
-        assert by_type.get('heavy', 0) == get_config('ENEMIES_INITIAL_COUNT_HEAVY')
-        assert by_type.get('fast', 0) == get_config('ENEMIES_INITIAL_COUNT_FAST')
+        assert by_type.get("light", 0) == get_config("ENEMIES_INITIAL_COUNT_LIGHT")
+        assert by_type.get("heavy", 0) == get_config("ENEMIES_INITIAL_COUNT_HEAVY")
+        assert by_type.get("fast", 0) == get_config("ENEMIES_INITIAL_COUNT_FAST")
 
 
 class TestEnemyManagerRespawn:
@@ -311,11 +368,14 @@ class TestEnemyManagerRespawn:
     @pytest.fixture
     def manager(self):
         from src.systems.enemy_manager import EnemyManager
+
         class _W:
             width = 4000
             height = 4000
+
             def check_collision(self, rect):
                 return False
+
         m = EnemyManager(_W())
         m.spawn_initial(player_x=2000, player_y=2000)
         return m
@@ -353,13 +413,16 @@ class TestEnemyManagerRespawn:
         для спавна вне 1024px.
         """
         from src.systems.enemy_manager import EnemyManager
+
         # Маленький мир: 1500x1500. min_distance=1024 - значит почти
         # любая точка ближе чем 1024 от центра.
         class _SmallW:
             width = 1500
             height = 1500
+
             def check_collision(self, rect):
                 return False
+
         small_m = EnemyManager(_SmallW())
         small_m.spawn_initial(player_x=750, player_y=750)
         # Может ничего не заспавнить - это нормально (мир мал)
@@ -376,8 +439,7 @@ class TestEnemyManagerRespawn:
         # Главный инвариант: ни один враг не появился ближе min_distance
         from src.core.config_loader import get_config
         import math
+
         for e in small_m.enemies:
             d = math.hypot(e.x - 750, e.y - 750)
-            assert d >= get_config('ENEMIES_SPAWN_MIN_DISTANCE')
-
-
+            assert d >= get_config("ENEMIES_SPAWN_MIN_DISTANCE")

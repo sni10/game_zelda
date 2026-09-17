@@ -33,7 +33,6 @@ from src.systems.save_system import SaveSystem
 from src.systems.pickup_manager import PickupManager
 from src.systems.mission import Campaign, build_dev_campaign
 
-
 # Размер игрока (32x32) - используется для центрирования в стартовом тайле.
 # В будущем стоит вынести в config.ini.
 _PLAYER_HALF = 16

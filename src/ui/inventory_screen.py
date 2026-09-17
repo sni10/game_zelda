@@ -28,6 +28,7 @@ API ↔ Game:
         {"type": "move_weapon", "from_index": i, "to_index": j}       — своп слотов
         {"type": "set_slot_weapon", "index": i, "weapon_id": wid}     — оружие из каталога в слот
 """
+
 from typing import List, Optional, Tuple
 
 import pygame
@@ -36,7 +37,6 @@ from src.core.config_loader import get_config, get_color
 from src.entities.armor import SLOT_NAMES
 from src.entities.player_combat import MAX_WEAPON_SLOTS
 from src.entities.weapons import WEAPON_CATALOG
-
 
 # Подписи слотов брони на экране инвентаря (см. src/entities/armor.py).
 _ARMOR_SLOT_LABELS = {
@@ -74,7 +74,7 @@ class InventoryScreen:
         зависящий от того, сколько игрок уже разлочил, чтобы открытие нового
         слота не двигало уже нарисованные (см. класс docstring)."""
         n = MAX_WEAPON_SLOTS
-        width = get_config('WIDTH')
+        width = get_config("WIDTH")
         total_w = n * self.SLOT_SIZE + (n - 1) * self.GAP
         start_x = (width - total_w) // 2
         return [
@@ -90,7 +90,7 @@ class InventoryScreen:
     def _catalog_rects(self) -> List[pygame.Rect]:
         """Rect'ы каталога - по одному на каждый weapon_id из WEAPON_CATALOG."""
         n = len(WEAPON_CATALOG)
-        width = get_config('WIDTH')
+        width = get_config("WIDTH")
         total_w = n * self.SLOT_SIZE + (n - 1) * self.GAP
         start_x = (width - total_w) // 2
         return [
@@ -107,7 +107,7 @@ class InventoryScreen:
         """Rect'ы полосок состояния брони - по одному на каждый слот из
         SLOT_NAMES (helmet/chest/arms/legs), в фиксированном порядке."""
         n = len(SLOT_NAMES)
-        width = get_config('WIDTH')
+        width = get_config("WIDTH")
         bar_w, bar_h, gap = 140, 20, 24
         total_w = n * bar_w + (n - 1) * gap
         start_x = (width - total_w) // 2
@@ -138,7 +138,9 @@ class InventoryScreen:
 
     def handle_input(self, event, player) -> Optional[dict]:
         if event.type == pygame.KEYDOWN and event.key in (
-            pygame.K_ESCAPE, pygame.K_i, pygame.K_TAB
+            pygame.K_ESCAPE,
+            pygame.K_i,
+            pygame.K_TAB,
         ):
             self._dragging = None
             return {"type": "close"}
@@ -164,24 +166,33 @@ class InventoryScreen:
             if source_kind == "slot":
                 if to_index == source_value:
                     return None
-                return {"type": "move_weapon", "from_index": source_value, "to_index": to_index}
+                return {
+                    "type": "move_weapon",
+                    "from_index": source_value,
+                    "to_index": to_index,
+                }
             # source_kind == "catalog"
-            return {"type": "set_slot_weapon", "index": to_index, "weapon_id": source_value}
+            return {
+                "type": "set_slot_weapon",
+                "index": to_index,
+                "weapon_id": source_value,
+            }
 
         return None
 
     # --- Отрисовка ---------------------------------------------------------
 
     def draw(self, screen: pygame.Surface, player) -> None:
-        screen.fill(get_color('BLACK'))
-        width = get_config('WIDTH')
+        screen.fill(get_color("BLACK"))
+        width = get_config("WIDTH")
 
-        title = self._font_title.render("ИНВЕНТАРЬ", True, get_color('WHITE'))
+        title = self._font_title.render("ИНВЕНТАРЬ", True, get_color("WHITE"))
         screen.blit(title, title.get_rect(center=(width // 2, 60)))
 
         section = self._font_section.render(
             f"Слоты оружия ({len(player.weapons)}/{MAX_WEAPON_SLOTS} открыто)",
-            True, get_color('WHITE'),
+            True,
+            get_color("WHITE"),
         )
         screen.blit(section, section.get_rect(center=(width // 2, self.SLOTS_Y - 30)))
 
@@ -192,11 +203,14 @@ class InventoryScreen:
                 self._draw_locked_slot(screen, rect, i)
 
         catalog_title = self._font_section.render(
-            "Всё оружие (перетащи в слот)", True, get_color('WHITE'),
+            "Всё оружие (перетащи в слот)",
+            True,
+            get_color("WHITE"),
         )
-        screen.blit(catalog_title, catalog_title.get_rect(
-            center=(width // 2, self.CATALOG_Y - 30)
-        ))
+        screen.blit(
+            catalog_title,
+            catalog_title.get_rect(center=(width // 2, self.CATALOG_Y - 30)),
+        )
 
         for weapon_id, rect in zip(WEAPON_CATALOG, self._catalog_rects()):
             self._draw_catalog_entry(screen, rect, weapon_id)
@@ -205,11 +219,12 @@ class InventoryScreen:
 
         help_text = self._font_help.render(
             "ЛКМ — перетащить оружие в слот или поменять слоты местами  |  Esc/I/Tab — закрыть",
-            True, (180, 180, 180),
+            True,
+            (180, 180, 180),
         )
-        screen.blit(help_text, help_text.get_rect(
-            center=(width // 2, self.ARMOR_Y + 60)
-        ))
+        screen.blit(
+            help_text, help_text.get_rect(center=(width // 2, self.ARMOR_Y + 60))
+        )
 
         self._draw_dragged_icon(screen, player)
 
@@ -217,9 +232,11 @@ class InventoryScreen:
         """Полоски состояния (текущий/максимальный щит) каждого надетого
         предмета брони (issue #63) - чтобы было видно, какая часть брони
         уже пробита, не только суммарный щит в HUD."""
-        width = get_config('WIDTH')
+        width = get_config("WIDTH")
         section = self._font_section.render(
-            "Броня (состояние щита)", True, get_color('WHITE'),
+            "Броня (состояние щита)",
+            True,
+            get_color("WHITE"),
         )
         screen.blit(section, section.get_rect(center=(width // 2, self.ARMOR_Y - 26)))
 
@@ -231,34 +248,41 @@ class InventoryScreen:
                 pct = armor.current_shield / armor.max_shield
                 fill_w = int(rect.width * pct)
                 if fill_w > 0:
-                    pygame.draw.rect(screen, (60, 140, 255),
-                                     (rect.x, rect.y, fill_w, rect.height))
+                    pygame.draw.rect(
+                        screen, (60, 140, 255), (rect.x, rect.y, fill_w, rect.height)
+                    )
             pygame.draw.rect(screen, (90, 90, 90), rect, 1)
 
             if armor is not None:
-                value_text = (f"{_ARMOR_SLOT_LABELS[slot_name]} "
-                             f"{armor.current_shield}/{armor.max_shield}")
+                value_text = (
+                    f"{_ARMOR_SLOT_LABELS[slot_name]} "
+                    f"{armor.current_shield}/{armor.max_shield}"
+                )
             else:
                 value_text = f"{_ARMOR_SLOT_LABELS[slot_name]} —"
-            value_surf = self._font_name.render(value_text, True, get_color('WHITE'))
-            screen.blit(value_surf, value_surf.get_rect(center=(rect.centerx, rect.bottom + 14)))
+            value_surf = self._font_name.render(value_text, True, get_color("WHITE"))
+            screen.blit(
+                value_surf, value_surf.get_rect(center=(rect.centerx, rect.bottom + 14))
+            )
 
     def _draw_active_slot(self, screen, rect, i, player) -> None:
         weapon = player.weapons[i]
-        pygame.draw.rect(screen, get_color('DARK_GRAY'), rect)
+        pygame.draw.rect(screen, get_color("DARK_GRAY"), rect)
         inner = rect.inflate(-14, -14)
         pygame.draw.rect(screen, weapon.color, inner)
 
-        is_active = (i == player.current_weapon_index)
-        border_color = get_color('WHITE') if is_active else (60, 60, 60)
+        is_active = i == player.current_weapon_index
+        border_color = get_color("WHITE") if is_active else (60, 60, 60)
         border_w = 3 if is_active else 1
         pygame.draw.rect(screen, border_color, rect, border_w)
 
-        digit_surf = self._font_digit.render(str(i + 1), True, get_color('WHITE'))
+        digit_surf = self._font_digit.render(str(i + 1), True, get_color("WHITE"))
         screen.blit(digit_surf, (rect.x + 4, rect.y + 2))
 
-        name_surf = self._font_name.render(weapon.name, True, get_color('WHITE'))
-        screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.bottom + 14)))
+        name_surf = self._font_name.render(weapon.name, True, get_color("WHITE"))
+        screen.blit(
+            name_surf, name_surf.get_rect(center=(rect.centerx, rect.bottom + 14))
+        )
 
     def _draw_locked_slot(self, screen, rect, i) -> None:
         """Ещё не разлоченный слот - виден, но неактивен (не принимает
@@ -266,22 +290,24 @@ class InventoryScreen:
         чтобы отличаться от активных слотов с первого взгляда."""
         slot_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
         local_rect = slot_surf.get_rect()
-        pygame.draw.rect(slot_surf, get_color('DARK_GRAY'), local_rect)
+        pygame.draw.rect(slot_surf, get_color("DARK_GRAY"), local_rect)
         pygame.draw.rect(slot_surf, (60, 60, 60), local_rect, 1)
-        digit_surf = self._font_digit.render(str(i + 1), True, get_color('WHITE'))
+        digit_surf = self._font_digit.render(str(i + 1), True, get_color("WHITE"))
         slot_surf.blit(digit_surf, (4, 2))
         slot_surf.set_alpha(self.LOCKED_ALPHA)
         screen.blit(slot_surf, rect.topleft)
 
     def _draw_catalog_entry(self, screen, rect, weapon_id) -> None:
         weapon_cls = WEAPON_CATALOG[weapon_id]
-        pygame.draw.rect(screen, get_color('DARK_GRAY'), rect)
+        pygame.draw.rect(screen, get_color("DARK_GRAY"), rect)
         inner = rect.inflate(-14, -14)
         pygame.draw.rect(screen, weapon_cls.color, inner)
         pygame.draw.rect(screen, (60, 60, 60), rect, 1)
 
-        name_surf = self._font_name.render(weapon_cls.name, True, get_color('WHITE'))
-        screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.bottom + 14)))
+        name_surf = self._font_name.render(weapon_cls.name, True, get_color("WHITE"))
+        screen.blit(
+            name_surf, name_surf.get_rect(center=(rect.centerx, rect.bottom + 14))
+        )
 
     def _draw_dragged_icon(self, screen, player) -> None:
         """Перетаскиваемая иконка следует за курсором - неважно, тащат её
@@ -301,4 +327,4 @@ class InventoryScreen:
         drag_rect = pygame.Rect(0, 0, self.SLOT_SIZE, self.SLOT_SIZE)
         drag_rect.center = (mx, my)
         pygame.draw.rect(screen, color, drag_rect)
-        pygame.draw.rect(screen, get_color('WHITE'), drag_rect, 2)
+        pygame.draw.rect(screen, get_color("WHITE"), drag_rect, 2)
